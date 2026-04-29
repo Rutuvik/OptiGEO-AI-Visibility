@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-50 text-zinc-900 font-sans selection:bg-emerald-500/10 overflow-x-hidden;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@utility aesthetic-card {
+  @apply bg-white border border-zinc-200 rounded-3xl shadow-sm transition-all duration-500 hover:border-zinc-300 hover:shadow-md;
+}
+
+@utility data-row {
+  @apply flex items-center justify-between p-4 border-b border-zinc-100 hover:bg-zinc-100/50 hover:text-zinc-950 transition-all cursor-pointer;
+}
+
+@utility col-header {
+  @apply font-mono italic text-[10px] text-zinc-500 uppercase tracking-widest;
+}
+
+@utility data-value {
+  @apply font-mono text-xs tracking-tight text-zinc-900;
+}
+
+@utility glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+@utility grid-bg {
+  background-image: 
+    linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+@utility scan-line {
+  @apply absolute left-0 w-full h-[1px] bg-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.2)] z-10 pointer-events-none;
+}
+
+.animate-fade-up {
+  @apply animate-in fade-in slide-in-from-bottom-5 duration-700 ease-out;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-zinc-200 rounded-full hover:bg-zinc-300; }
+
+.markdown-body { @apply text-zinc-600 leading-relaxed space-y-4; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { @apply text-zinc-900 font-bold tracking-tight; }
+.markdown-body code { @apply bg-zinc-100 px-1.5 py-0.5 rounded font-mono text-[11px] text-emerald-600; }
+
+@theme inline {
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+  --radius-3xl: 3rem;
+  --color-border: oklch(0.9 0.01 240);
+  --color-background: oklch(0.98 0.01 240);
+  --color-foreground: oklch(0.12 0.01 240);
+  --color-muted-foreground: oklch(0.4 0.01 240);
+}
+
+:root {
+  --background: oklch(0.98 0.01 240);
+  --foreground: oklch(0.12 0.01 240);
+  --muted: oklch(0.92 0.01 240);
+  --muted-foreground: oklch(0.4 0.01 240);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.12 0.01 240);
+  --primary: oklch(0.2 0.01 240);
+  --primary-foreground: oklch(0.98 0.01 240);
+  --border: oklch(0.9 0.01 240);
+  --ring: oklch(0.12 0.01 240);
+}
