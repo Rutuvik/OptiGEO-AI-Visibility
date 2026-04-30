@@ -49,9 +49,6 @@ db.exec(`
   );
 `);
 
-const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-console.log(`[DB] Database initialized. Current user count: ${userCount.count}`);
-
 interface AuthRequest extends Request {
   user?: { id: string; email: string };
 }
@@ -75,72 +72,28 @@ async function startServer() {
 
   // AUTH API
   app.post('/api/auth/register', async (req, res) => {
-    let { email, password, name } = req.body;
+    const { email, password, name } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const userId = Math.random().toString(36).substr(2, 9);
     
-    // Normalize email: lowercase and trim
-    const normalizedEmail = email?.toLowerCase().trim();
-    
-    console.log(`[AUTH-DEBUG] Registering user: Original="${email}", Normalized="${normalizedEmail}"`);
-    
-    if (!normalizedEmail || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
-
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const userId = Math.random().toString(36).substr(2, 9);
-      
-      db.prepare('INSERT INTO users (id, email, password, name) VALUES (?, ?, ?, ?)').run(userId, normalizedEmail, hashedPassword, name);
-      
-      // Double check it was saved
-      const check = db.prepare('SELECT email FROM users WHERE email = ?').get(normalizedEmail);
-      console.log(`[AUTH-DEBUG] Registration verify for ${normalizedEmail}: ${check ? 'SUCCESS' : 'FAILED'}`);
-
-      const token = jwt.sign({ id: userId, email: normalizedEmail }, JWT_SECRET, { expiresIn: '7d' });
-      res.json({ token, user: { id: userId, email: normalizedEmail, name } });
+      db.prepare('INSERT INTO users (id, email, password, name) VALUES (?, ?, ?, ?)').run(userId, email, hashedPassword, name);
+      const token = jwt.sign({ id: userId, email }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ token, user: { id: userId, email, name } });
     } catch (err) {
-      console.error(`[AUTH-DEBUG] Registration error for ${normalizedEmail}:`, err);
-      res.status(400).json({ error: 'User already exists or registration failed' });
+      res.status(400).json({ error: 'User already exists' });
     }
   });
 
   app.post('/api/auth/login', async (req, res) => {
-    let { email, password } = req.body;
+    const { email, password } = req.body;
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as any;
     
-    // Normalize email: lowercase and trim
-    const normalizedEmail = email?.toLowerCase().trim();
-
-    console.log(`[AUTH-DEBUG] Login attempt: Original="${email}", Normalized="${normalizedEmail}"`);
-    
-    if (!normalizedEmail || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
-    }
-
-    try {
-      // Log all emails in DB for debugging if user not found
-      const user = db.prepare('SELECT * FROM users WHERE email = ?').get(normalizedEmail) as any;
-      
-      if (!user) {
-        console.log(`[AUTH-DEBUG] Login failed: User not found "${normalizedEmail}"`);
-        // List a few users in DB to see what's there
-        const allUsers = db.prepare('SELECT email FROM users LIMIT 5').all() as any[];
-        console.log(`[AUTH-DEBUG] Current users in DB (first 5):`, allUsers.map(u => u.email));
-        return res.status(401).json({ error: 'User not found' });
-      }
-
-      console.log(`[AUTH-DEBUG] User found in DB: ${user.email}`);
-      const passwordMatch = await bcrypt.compare(password, user.password);
-      console.log(`[AUTH-DEBUG] Password match for ${normalizedEmail}: ${passwordMatch}`);
-
-      if (passwordMatch) {
-        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
-        res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
-      } else {
-        res.status(401).json({ error: 'Invalid credentials' });
-      }
-    } catch (err) {
-      console.error(`[AUTH-DEBUG] Login error for ${normalizedEmail}:`, err);
-      res.status(500).json({ error: 'Internal server error' });
+    if (user && await bcrypt.compare(password, user.password)) {
+      const token = jwt.sign({ id: user.id, email }, JWT_SECRET, { expiresIn: '7d' });
+      res.json({ token, user: { id: user.id, email, name: user.name } });
+    } else {
+      res.status(401).json({ error: 'Invalid credentials' });
     }
   });
 
