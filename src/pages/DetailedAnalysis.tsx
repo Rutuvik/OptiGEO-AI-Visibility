@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -26,10 +26,16 @@ import {
   MessageSquare,
   AlertOctagon,
   Download,
-  Share2
+  Share2,
+  FileText,
+  FileSpreadsheet,
+  FileJson,
+  Loader2,
+  XCircle
 } from 'lucide-react';
+import { useAppStore } from '../lib/store';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card';
-import { Button } from '../components/ui/button';
+import { Button, buttonVariants } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
 import { Progress } from '../components/ui/progress';
@@ -52,11 +58,20 @@ import { performDetailedAnalysis } from '../lib/gemini';
 import { ActionEngine } from '../components/ActionEngine';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
+import { exportToJSON, exportToCSV, exportReportToPDF, exportToDOC } from '../lib/exportUtils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
+import { cn } from "../lib/utils";
 
 export default function DetailedAnalysis() {
-  const [domain, setDomain] = useState('');
+  const { reports, setReport, clearReport } = useAppStore();
+  const [domain, setDomain] = useState(reports.detailedAnalysis?.input?.domain || '');
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<any>(null);
+  const data = reports.detailedAnalysis?.result || null;
   const [activeTab, setActiveTab] = useState('overview');
 
   const handleAnalysis = async () => {
@@ -68,7 +83,7 @@ export default function DetailedAnalysis() {
     try {
       const result = await performDetailedAnalysis(domain);
       if (result) {
-        setData(result);
+        setReport('detailedAnalysis', { domain }, result);
         toast.success('Deep analysis synchronization complete');
       } else {
         toast.error('Neural engine failed to produce valid audit');
@@ -81,10 +96,63 @@ export default function DetailedAnalysis() {
     }
   };
 
+  const handleClear = () => {
+    clearReport('detailedAnalysis');
+    setDomain('');
+    toast.info('Analysis cleared');
+  };
+
   const getScoreColor = (score: number) => {
     if (score >= 80) return 'text-emerald-500';
     if (score >= 50) return 'text-amber-500';
     return 'text-rose-500';
+  };
+
+  const exportAnalysis = (format: 'pdf' | 'csv' | 'doc' | 'json') => {
+    if (!data) return;
+    const title = `Detailed GEO Intelligence: ${domain}`;
+    const fileName = `GEO_Full_Audit_${domain.replace(/[^a-z0-9]/gi, '_')}`;
+
+    if (format === 'json') {
+      exportToJSON(data, fileName);
+      return;
+    }
+
+    const sections: { title: string, content: any, type: 'text' | 'table' | 'list' }[] = [
+      { title: 'Executive KPI Summary', content: `Performance: ${data.performanceScore}/100, Visibility Matrix: ${data.visibilityScore}/100, Sentiment Pulse: ${data.sentimentScore}/100, Accuracy Rating: ${data.accuracyRating}/100.`, type: 'text' },
+      { title: 'AI Visibility Audit', content: data.aiVisibility.insights, type: 'text' },
+      { title: 'AI Presence Stats', content: [{ Metric: 'Mentions', Value: data.aiVisibility.mentions }, { Metric: 'Citations', Value: data.aiVisibility.citations }, { Metric: 'Position', Value: data.aiVisibility.position }], type: 'table' },
+      { title: 'Keyword Intelligence (Top)', content: (data.keywords?.top || []), type: 'list' },
+      { title: 'Semantic Gaps Detected', content: (data.keywords?.gaps || []), type: 'list' },
+      { title: 'Competitor Benchmarking', content: (data.competitors || []).map((c: any) => ({ Name: c.name, Visibility: `${c.visibility}%`, Overlap: c.overlap })), type: 'table' },
+      { title: 'Regional Visibility Matrix', content: (data.regionalVisibility || []).map((r: any) => ({ Region: r.region, Visibility: `${r.visibility}%` })), type: 'table' },
+      { title: 'Structural Quality Audit', content: [{ Metric: 'Structure', Value: data.contentQuality.structure }, { Metric: 'Entities', Value: data.contentQuality.entities }, { Metric: 'Semantic Depth', Value: data.contentQuality.semanticDepth }], type: 'table' },
+      { title: 'Audit Note', content: data.contentQuality.auditNote, type: 'text' },
+      { title: 'False Narratives Detected', content: (data.falseNarratives || []).length > 0 ? (data.falseNarratives || []).map((n: any) => ({ Claim: n.claim, Correction: n.correction })) : [{ Claim: 'None', Correction: 'N/A' }], type: 'table' },
+      { title: 'Neural Growth Strategy', content: data.growthStrategy, type: 'text' },
+      { title: 'GEO Optimization Plan', content: data.geoOptimizationPlan, type: 'text' },
+      { title: 'Action Deployment Roadmap', content: (data.actionPlan || []), type: 'list' }
+    ];
+
+    if (data.actionEngine && data.actionEngine.length > 0) {
+      sections.push({
+        title: 'Action Engine Deployment',
+        content: data.actionEngine.map((a: any) => ({ Issue: a.issue, Priority: a.priority, Impact: `${a.impactScore}/100`, Effort: a.effort })),
+        type: 'table'
+      });
+    }
+
+    if (format === 'csv') {
+      const flatData = sections.filter(s => s.type === 'table' || s.type === 'list').flatMap(s => {
+        if (s.type === 'table') return s.content.map((row: any) => ({ Section: s.title, ...row }));
+        return s.content.map((item: string) => ({ Section: s.title, Value: item }));
+      });
+      exportToCSV(flatData, fileName);
+    } else if (format === 'pdf') {
+      exportReportToPDF(title, sections);
+    } else if (format === 'doc') {
+      exportToDOC(title, sections);
+    }
   };
 
   if (loading) {
@@ -139,6 +207,38 @@ export default function DetailedAnalysis() {
            >
              <Zap size={18} className="mr-2" /> Run Protocol
            </Button>
+
+           {data && (
+             <Button 
+               variant="outline"
+               onClick={handleClear}
+               className="h-14 px-6 rounded-2xl border-zinc-200 dark:border-zinc-800 font-bold text-sm bg-white dark:bg-zinc-900 transition-all shadow-sm"
+             >
+               <XCircle size={18} className="mr-2 text-rose-500" /> Clear
+             </Button>
+           )}
+
+           {data && (
+             <DropdownMenu>
+                <DropdownMenuTrigger className="h-14 px-6 rounded-2xl bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-zinc-950/10 inline-flex items-center justify-center">
+                  <Download size={18} className="mr-2" /> Export
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden min-w-[180px] z-[100]">
+                  <DropdownMenuItem onClick={() => exportAnalysis('pdf')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <FileText size={14} className="text-rose-500" /> Intelligence PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportAnalysis('doc')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <FileText size={14} className="text-indigo-500" /> Strategic DOC
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportAnalysis('csv')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <FileSpreadsheet size={14} className="text-emerald-500" /> Metrics CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportAnalysis('json')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <FileJson size={14} className="text-amber-500" /> Neural JSON
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+             </DropdownMenu>
+           )}
         </div>
       </header>
 

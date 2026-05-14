@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, Cell, ComposedChart, Line, Area,
@@ -28,16 +28,18 @@ import {
   Download,
   FileJson,
   FileSpreadsheet,
-  FileText
+  FileText,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { conductCompetitorAnalysis } from '../lib/gemini';
 import { toast } from 'sonner';
-import { exportToJSON, exportToCSV, exportReportToPDF } from '../lib/exportUtils';
+import { exportToJSON, exportToCSV, exportReportToPDF, exportToDOC } from '../lib/exportUtils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,13 +84,14 @@ const CATEGORIES = [
 ];
 
 export default function CompetitorAnalysis() {
-  const [myBrand, setMyBrand] = useState('');
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [customCategory, setCustomCategory] = useState('');
-  const [location, setLocation] = useState('');
-  const [competitors, setCompetitors] = useState<Competitor[]>([{ name: '', url: '' }]);
+  const { reports, setReport, clearReport } = useAppStore();
+  const [myBrand, setMyBrand] = useState(reports.competitorAnalysis?.input?.myBrand || '');
+  const [category, setCategory] = useState(reports.competitorAnalysis?.input?.category || CATEGORIES[0]);
+  const [customCategory, setCustomCategory] = useState(reports.competitorAnalysis?.input?.customCategory || '');
+  const [location, setLocation] = useState(reports.competitorAnalysis?.input?.location || '');
+  const [competitors, setCompetitors] = useState<Competitor[]>(reports.competitorAnalysis?.input?.competitors || [{ name: '', url: '' }]);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const result = reports.competitorAnalysis?.result || null;
 
   const addCompetitor = () => {
     if (competitors.length < 5) {
@@ -119,7 +122,6 @@ export default function CompetitorAnalysis() {
     }
 
     setLoading(true);
-    setResult(null);
     
     try {
       // Filter out empty competitors
@@ -134,7 +136,7 @@ export default function CompetitorAnalysis() {
       
       if (!data) throw new Error("Analysis failed");
 
-      setResult(data);
+      setReport('competitorAnalysis', { myBrand, category, customCategory, location, competitors: validCompetitors }, data);
       toast.success('Market Intelligence Synchronized');
     } catch (err) {
       console.error(err);
@@ -144,26 +146,39 @@ export default function CompetitorAnalysis() {
     }
   };
 
-  const exportAnalysis = (format: 'pdf' | 'csv' | 'json') => {
+  const exportAnalysis = (format: 'pdf' | 'csv' | 'doc' | 'json') => {
     if (!result) return;
-
-    const fileName = `Competitor_Analysis_${myBrand.replace(/[^a-z0-9]/gi, '_')}`;
+    const title = `Market Rivalry Intelligence: ${myBrand}`;
+    const fileName = `Competitor_Intelligence_${myBrand.replace(/[^a-z0-9]/gi, '_')}`;
 
     if (format === 'json') {
       exportToJSON(result, fileName);
     } else if (format === 'csv') {
-      exportToCSV(result.overallSov, `${fileName}_SOV`);
-    } else if (format === 'pdf') {
-      const sections = [
-        { title: 'Market Category', content: category, type: 'text' as const },
-        { title: 'Share of Voice (SOV)', content: result.overallSov, type: 'table' as const },
-        { title: 'Favored External Sources', content: result.favoredSources.map((s: any) => `${s.source} favors ${s.favoredBrand}: ${s.context}`), type: 'list' as const },
-        { title: 'Visibility Gap Analysis', content: result.gapAnalysis, type: 'table' as const },
-        { title: 'Strategic Tactics', content: result.strategicInsights.map((i: any) => `${i.brand}: ${i.tactic} (${i.impact} Impact)`), type: 'list' as const },
+      const flatData = [
+        ...result.overallSov.map((s: any) => ({ Section: 'ShareOfVoice', ...s })),
+        ...result.favoredSources.map((f: any) => ({ Section: 'FavoredSources', ...f })),
+        ...result.gapAnalysis.map((g: any) => ({ Section: 'GapAnalysis', ...g })),
+        ...result.strategicInsights.map((i: any) => ({ Section: 'StrategicInsights', ...i }))
       ];
-      exportReportToPDF(`Competitor Intelligence: ${myBrand}`, sections);
+      exportToCSV(flatData, `${fileName}_Dataset`);
+    } else {
+       const sections: { title: string, content: any, type: 'text' | 'table' | 'list' }[] = [
+        { title: 'Executive Market Summary', content: `Brand: ${myBrand}\nCategory: ${category}\nAudit Scope: Neural Knowledge Base Citations\nContext: ${result.locationInsights || 'Global Analysis'}`, type: 'text' },
+        { title: 'Share of Voice (SOV)', content: result.overallSov.map((s: any) => ({ Entity: s.name, Visibility: `${s.percentage}%` })), type: 'table' },
+        { title: 'Engine Dominance Scorecard', content: result.visibilityByEngine.map((e: any) => ({ Engine: e.engine, ...e.scores })), type: 'table' },
+        { title: 'Favored External Clusters', content: result.favoredSources.map((s: any) => `${s.source} favors ${s.favoredBrand}: ${s.context}`), type: 'list' },
+        { title: 'Market Positioning Mapping', content: result.marketPositioning.map((p: any) => ({ Brand: p.brand, Tier: p.position, Logic: p.reasoning })), type: 'table' },
+        { title: 'Visibility Gap Analysis', content: result.gapAnalysis.map((g: any) => ({ Prompt: g.prompt, Dominant: g.dominatingBrand, Observation: g.missedOpportunity })), type: 'table' },
+        { title: 'Strategic Tactical Roadmap', content: result.strategicInsights.map((i: any) => `${i.brand} Protocol: ${i.tactic} (Impact Grade: ${i.impact})`), type: 'list' }
+      ];
+
+      if (format === 'pdf') {
+        exportReportToPDF(title, sections);
+      } else if (format === 'doc') {
+        exportToDOC(title, sections);
+      }
     }
-    toast.success(`Exporting as ${format.toUpperCase()}`);
+    toast.success(`Synthesizing ${format.toUpperCase()} Intelligence...`);
   };
 
   const COLORS = ['#38bdf8', '#6366f1', '#f59e0b', '#ec4899', '#10b981', '#ef4444'];
@@ -180,6 +195,28 @@ export default function CompetitorAnalysis() {
               Deconstruct rival influence across the generative knowledge base. Identify third-party citations fueling competitor visibility.
            </p>
         </div>
+
+        {result && (
+          <DropdownMenu>
+            <DropdownMenuTrigger className="h-12 px-6 rounded-2xl bg-zinc-950 text-white font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-zinc-950/20 inline-flex items-center justify-center">
+              <Download size={18} className="mr-2" /> Export Audit
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="bg-white border-zinc-200 rounded-xl overflow-hidden min-w-[200px] z-[100] shadow-2xl">
+              <DropdownMenuItem onClick={() => exportAnalysis('pdf')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                <FileText size={14} className="text-rose-500" /> Strategic PDF Intelligence
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAnalysis('doc')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                <FileText size={14} className="text-indigo-500" /> Executive DOC Report
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAnalysis('csv')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                <FileSpreadsheet size={14} className="text-emerald-500" /> Raw CSV Statistics
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAnalysis('json')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                <FileJson size={14} className="text-amber-500" /> Advanced JSON Neural
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -289,6 +326,22 @@ export default function CompetitorAnalysis() {
                  {loading ? <Loader2 className="animate-spin mr-2" /> : <Layers size={18} className="mr-2" />}
                  Deep Global Audit
                </Button>
+
+               {result && (
+                 <Button 
+                   variant="outline"
+                   onClick={() => {
+                     clearReport('competitorAnalysis');
+                     setMyBrand('');
+                     setCategory('Agency / B2B Services');
+                     setCompetitors([{ name: '', url: '' }]);
+                     toast.info('Analysis cleared');
+                   }}
+                   className="w-full h-14 bg-white hover:bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-2xl font-bold uppercase tracking-widest text-sm shadow-sm transition-all mt-4"
+                 >
+                   <XCircle size={18} className="mr-2 text-rose-500" /> Reset Report
+                 </Button>
+               )}
             </CardContent>
           </Card>
         </div>
@@ -439,8 +492,8 @@ export default function CompetitorAnalysis() {
                    <div className="space-y-8">
                       <div className="flex items-center justify-between">
                          <div>
-                            <h3 className="text-xl font-black tracking-tight text-zinc-950">Biased External Clusters</h3>
-                            <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest mt-1">Sources fueling rival generative authority</p>
+                            <h3 className="text-3xl font-black tracking-tighter text-zinc-950 px-4 py-1.5 bg-zinc-950 text-white inline-block rounded-xl">Biased External Clusters</h3>
+                            <p className="text-sm text-zinc-600 font-bold uppercase tracking-widest mt-2 ml-1">Sources fueling rival generative authority</p>
                          </div>
                          <Badge className="bg-rose-50 text-rose-500 border-none font-black text-[10px] px-4 py-1.5 rounded-full">Citation Leakage</Badge>
                       </div>
@@ -479,8 +532,8 @@ export default function CompetitorAnalysis() {
                             <AlertCircle size={20} />
                          </div>
                          <div>
-                            <h3 className="text-xl font-black tracking-tight text-zinc-950">Visibility Gap Analysis</h3>
-                            <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest mt-1">High-intent prompts where rivals are monopolizing citations</p>
+                            <h3 className="text-3xl font-black tracking-tighter text-zinc-950">Visibility Gap Analysis</h3>
+                            <p className="text-sm text-zinc-500 font-bold uppercase tracking-widest mt-1">High-intent prompts where rivals are monopolizing citations</p>
                          </div>
                       </div>
                    </div>
@@ -488,22 +541,22 @@ export default function CompetitorAnalysis() {
                       <table className="w-full text-left">
                          <thead className="bg-zinc-50/50">
                             <tr>
-                               <th className="px-10 py-6 text-[10px] font-black uppercase tracking-widest text-zinc-400">Target Intent / Prompt</th>
-                               <th className="px-10 py-6 text-[10px] font-black uppercase tracking-widest text-zinc-400">Dominant Rival</th>
-                               <th className="px-10 py-6 text-[10px] font-black uppercase tracking-widest text-zinc-400">Missed Opportunity</th>
+                               <th className="px-10 py-6 text-xs font-black uppercase tracking-widest text-zinc-500">Target Intent / Prompt</th>
+                               <th className="px-10 py-6 text-xs font-black uppercase tracking-widest text-zinc-500">Dominant Rival</th>
+                               <th className="px-10 py-6 text-xs font-black uppercase tracking-widest text-zinc-500">Missed Opportunity</th>
                             </tr>
                          </thead>
                          <tbody className="divide-y divide-zinc-100">
                             {result.gapAnalysis.map((gap: any, i: number) => (
-                              <tr key={i} className="hover:bg-zinc-50/30 transition-colors">
-                                 <td className="px-10 py-6">
-                                    <p className="text-xs font-black text-zinc-950 italic">"{gap.prompt}"</p>
+                              <tr key={i} className="hover:bg-zinc-50/50 transition-colors">
+                                 <td className="px-10 py-8">
+                                    <p className="text-lg font-black text-zinc-950 italic leading-tight">"{gap.prompt}"</p>
                                  </td>
-                                 <td className="px-10 py-6">
-                                    <Badge className="bg-zinc-100 text-zinc-950 font-black text-[9px] uppercase border-none px-3">{gap.dominatingBrand}</Badge>
+                                 <td className="px-10 py-8">
+                                    <Badge className="bg-zinc-950 text-white font-black text-[10px] uppercase border-none px-4 py-1.5 rounded-lg shadow-lg shadow-zinc-950/10">{gap.dominatingBrand}</Badge>
                                  </td>
-                                 <td className="px-10 py-6">
-                                    <p className="text-xs font-bold text-zinc-500">{gap.missedOpportunity}</p>
+                                 <td className="px-10 py-8">
+                                    <p className="text-sm font-bold text-zinc-600 leading-relaxed max-w-md">{gap.missedOpportunity}</p>
                                  </td>
                               </tr>
                             ))}

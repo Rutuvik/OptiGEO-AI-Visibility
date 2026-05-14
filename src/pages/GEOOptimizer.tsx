@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Globe, 
   Search, 
@@ -20,9 +20,11 @@ import {
   CheckCircle2,
   FileJson,
   FileSpreadsheet,
-  FileText
+  FileText,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import { 
   RadarChart, 
   PolarGrid, 
@@ -70,20 +72,20 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function GEOOptimizer() {
-  const [url, setUrl] = useState('');
-  const [keywords, setKeywords] = useState('');
-  const [schema, setSchema] = useState('');
+  const { reports, setReport, clearReport } = useAppStore();
+  const [url, setUrl] = useState(reports.geoOptimizer?.input?.url || '');
+  const [keywords, setKeywords] = useState(reports.geoOptimizer?.input?.keywords || '');
+  const [schema, setSchema] = useState(reports.geoOptimizer?.input?.schema || '');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const result = reports.geoOptimizer?.result || null;
 
   const handleAnalysis = async () => {
     if (!url) return toast.error('Website URL is mandatory');
     setLoading(true);
-    setResult(null);
     try {
       const data = await conductGeoAnalysis(url, keywords, schema);
       if (data) {
-        setResult(data);
+        setReport('geoOptimizer', { url, keywords, schema }, data);
         toast.success('GEO Audit Protocol Complete');
       } else {
         toast.error('Audit failed to generate viable intel');
@@ -553,7 +555,7 @@ export default function GEOOptimizer() {
                   <Button 
                     variant="ghost" 
                     onClick={() => {
-                        setResult(null);
+                        clearReport('geoOptimizer');
                         setKeywords('');
                         setSchema('');
                         setUrl('');

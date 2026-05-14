@@ -47,8 +47,8 @@ export default function Login() {
           initial={{ scale: 1.1, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 1.5, ease: "easeOut" }}
-          src="https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?auto=format&fit=crop&q=80&w=2667" 
-          alt="Minimalist Workspace" 
+          src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=2600" 
+          alt="GEO Technology Connectivity" 
           className="absolute inset-0 w-full h-full object-cover"
           referrerPolicy="no-referrer"
         />
@@ -96,7 +96,7 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="space-y-8">
             <div className="space-y-6">
               <div className="space-y-2 group">
-                <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Identity Node</Label>
+                <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Email Id</Label>
                 <div className="relative">
                    <Input 
                      id="email" 
@@ -114,7 +114,7 @@ export default function Login() {
               </div>
               <div className="space-y-2 group">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Auth Cipher</Label>
+                  <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Password</Label>
                 </div>
                 <div className="relative">
                    <Input 

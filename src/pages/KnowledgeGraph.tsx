@@ -24,7 +24,8 @@ import {
   Package,
   Building,
   FileJson,
-  FileSpreadsheet
+  FileSpreadsheet,
+  XCircle
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -40,6 +41,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import { useAppStore } from '../lib/store';
 
 interface Node extends d3.SimulationNodeDatum {
   id: string;
@@ -58,15 +60,31 @@ interface Link extends d3.SimulationLinkDatum<Node> {
 }
 
 export default function KnowledgeGraph() {
+  const { reports, setReport, updateReport, clearReport } = useAppStore();
+  const persistedData = reports.knowledgeGraph;
+
   const [loading, setLoading] = useState(false);
-  const [graphData, setGraphData] = useState<{ nodes: Node[]; links: Link[]; jsonLd?: any } | null>(null);
+  const [graphData, setGraphData] = useState<{ nodes: Node[]; links: Link[]; jsonLd?: any } | null>(persistedData?.result?.graphData || null);
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(persistedData?.result?.selectedNode || null);
 
-  const [entities, setEntities] = useState('');
-  const [specs, setSpecs] = useState('');
-  const [authorities, setAuthorities] = useState('');
+  const [entities, setEntities] = useState(() => persistedData?.input?.entities || '');
+  const [specs, setSpecs] = useState(() => persistedData?.input?.specs || '');
+  const [authorities, setAuthorities] = useState(() => persistedData?.input?.authorities || '');
+
+  useEffect(() => {
+    if (persistedData) {
+      if (persistedData.input?.entities) setEntities(persistedData.input.entities);
+      if (persistedData.input?.specs) setSpecs(persistedData.input.specs);
+      if (persistedData.input?.authorities) setAuthorities(persistedData.input.authorities);
+      if (persistedData.result?.graphData) {
+        setGraphData(persistedData.result.graphData);
+        setTimeout(() => renderD3Graph(persistedData.result.graphData), 100);
+      }
+      if (persistedData.result?.selectedNode) setSelectedNode(persistedData.result.selectedNode);
+    }
+  }, []);
 
   const runMapping = async () => {
     if (!entities) {
@@ -83,6 +101,7 @@ export default function KnowledgeGraph() {
       });
       if (data && data.nodes) {
         setGraphData(data);
+        setReport('knowledgeGraph', { entities, specs, authorities }, { graphData: data, selectedNode });
         // Delay slightly to ensure ref is ready if needed, though d3 usually manages
         setTimeout(() => renderD3Graph(data), 100);
         toast.success('Semantic biosphere synchronized');
@@ -168,7 +187,10 @@ export default function KnowledgeGraph() {
       .attr('stroke', '#0f172a')
       .attr('stroke-width', 2)
       .style('cursor', 'pointer')
-      .on('click', (event, d) => setSelectedNode(d));
+      .on('click', (event, d) => {
+        setSelectedNode(d);
+        updateReport('knowledgeGraph', { selectedNode: d });
+      });
 
     node.append('text')
       .attr('dy', d => d.val * 3 + 24)
@@ -250,6 +272,24 @@ export default function KnowledgeGraph() {
               {loading ? <RefreshCw className="animate-spin mr-2" /> : <Zap size={18} className="mr-2" />}
               Synchronize Map
            </Button>
+
+           {graphData && (
+             <Button 
+               variant="outline"
+               onClick={() => {
+                 clearReport('knowledgeGraph');
+                 setEntities('');
+                 setSpecs('');
+                 setAuthorities('');
+                 setGraphData(null);
+                 setSelectedNode(null);
+                 toast.info('Knowledge map cleared');
+               }}
+               className="h-11 px-6 rounded-xl border-white/10 font-bold text-sm bg-white/5 hover:bg-white/10 transition-all shadow-sm text-white"
+             >
+               <XCircle size={18} className="mr-2 text-rose-500" /> Clear Map
+             </Button>
+           )}
         </div>
       </header>
 

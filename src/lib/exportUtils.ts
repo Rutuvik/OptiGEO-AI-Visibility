@@ -103,3 +103,64 @@ export const exportReportToPDF = (title: string, sections: { title: string, cont
 
   doc.save(`${title.replace(/\s+/g, '_').toLowerCase()}_report.pdf`);
 };
+
+export const exportToDOC = (title: string, sections: { title: string, content: any, type: 'text' | 'table' | 'list' }[]) => {
+  let content = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'><title>${title}</title>
+    <style>
+      body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+      h1 { color: #4f46e5; }
+      h2 { color: #18181b; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; margin-top: 20px; }
+      table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+      th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 10pt; }
+      th { background-color: #f9fafb; font-weight: bold; }
+      .meta { color: #9ca3af; font-size: 9pt; margin-bottom: 20px; }
+    </style>
+    </head>
+    <body>
+      <h1>${title}</h1>
+      <div class="meta">Generated on: ${new Date().toLocaleString()}</div>
+  `;
+
+  sections.forEach(section => {
+    content += `<h2>${section.title}</h2>`;
+    if (section.type === 'text') {
+      content += `<p>${String(section.content).replace(/\n/g, '<br>')}</p>`;
+    } else if (section.type === 'list') {
+      content += `<ul>`;
+      (section.content as string[]).forEach(item => {
+        content += `<li>${item}</li>`;
+      });
+      content += `</ul>`;
+    } else if (section.type === 'table') {
+      const data = section.content as any[];
+      if (data && data.length > 0) {
+        const headers = Object.keys(data[0]);
+        content += `<table><thead><tr>`;
+        headers.forEach(h => {
+          content += `<th>${h.charAt(0).toUpperCase() + h.slice(1)}</th>`;
+        });
+        content += `</tr></thead><tbody>`;
+        data.forEach(row => {
+          content += `<tr>`;
+          headers.forEach(h => {
+            content += `<td>${row[h]}</td>`;
+          });
+          content += `</tr>`;
+        });
+        content += `</tbody></table>`;
+      }
+    }
+  });
+
+  content += `</body></html>`;
+
+  const blob = new Blob(['\ufeff', content], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${title.replace(/\s+/g, '_').toLowerCase()}_report.doc`;
+  link.click();
+  URL.revokeObjectURL(url);
+};

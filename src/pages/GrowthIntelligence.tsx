@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, 
   Target, 
@@ -17,9 +17,11 @@ import {
   Download,
   FileJson,
   FileSpreadsheet,
-  FileText
+  FileText,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button, buttonVariants } from '../components/ui/button';
 import { cn } from '../lib/utils';
@@ -28,7 +30,7 @@ import { Badge } from '../components/ui/badge';
 import { toast } from 'sonner';
 import { generateGrowthStrategy } from '../lib/gemini';
 import { ActionEngine } from '../components/ActionEngine';
-import { exportToJSON, exportToCSV, exportReportToPDF } from '../lib/exportUtils';
+import { exportToJSON, exportToCSV, exportReportToPDF, exportToDOC } from '../lib/exportUtils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,9 +78,10 @@ interface AnalysisResult {
 }
 
 export default function GrowthIntelligence() {
-  const [domain, setDomain] = useState('');
+  const { reports, setReport, clearReport } = useAppStore();
+  const [domain, setDomain] = useState(reports.growthIntelligence?.input?.domain || '');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const result = reports.growthIntelligence?.result || null;
 
   const handleAnalyze = async () => {
     if (!domain) {
@@ -89,7 +92,7 @@ export default function GrowthIntelligence() {
     try {
       const data = await generateGrowthStrategy(domain);
       if (data) {
-        setResult(data);
+        setReport('growthIntelligence', { domain }, data);
         toast.success('Growth Intelligence report generated');
       } else {
         toast.error('Engine failed to synthesize deep research');
@@ -101,35 +104,54 @@ export default function GrowthIntelligence() {
     }
   };
 
-  const reset = () => {
+   const reset = () => {
+    clearReport('growthIntelligence');
     setDomain('');
-    setResult(null);
   };
 
-  const exportGrowthReport = (format: 'pdf' | 'csv' | 'json') => {
+  const exportGrowthReport = (format: 'pdf' | 'csv' | 'doc' | 'json') => {
     if (!result) return;
-
+    const title = `AI Growth Intelligence: ${domain}`;
     const fileName = `Growth_Intelligence_${domain.replace(/[^a-z0-9]/gi, '_')}`;
 
     if (format === 'json') {
       exportToJSON(result, fileName);
     } else if (format === 'csv') {
-      exportToCSV(result.performanceMetrics, `${fileName}_Metrics`);
-    } else if (format === 'pdf') {
-       const sections = [
-        { title: 'Growth Score', content: `Overall Growth Score: ${result.overallScore}`, type: 'text' as const },
-        { title: 'Performance Metrics', content: result.performanceMetrics, type: 'table' as const },
-        { title: 'Competitive Benchmark', content: result.competitorBenchmark.map(c => ({ Name: c.name, Share: `${c.marketShare}%`, Strengths: c.strengths.join(', ') })), type: 'table' as const },
-        { title: 'Gap Analysis', content: result.gapAnalysis, type: 'table' as const },
-        { title: 'Trending Topics', content: result.trends.trending, type: 'list' as const },
-        { title: 'Declining Relevance', content: result.trends.declining, type: 'list' as const },
-        { title: 'Content Cluster Strategy', content: result.strategy.content, type: 'list' as const },
-        { title: 'GEO Execution Tactics', content: result.strategy.geo, type: 'list' as const },
-        { title: 'High-Impact Actions', content: result.strategy.actionableSteps, type: 'list' as const },
+      const flatData = [
+        ...result.performanceMetrics.map(m => ({ Section: 'Performance', ...m })),
+        ...result.competitorBenchmark.map(c => ({ Section: 'Competition', Name: c.name, Share: c.marketShare, Strengths: c.strengths.join('; ') })),
+        ...result.gapAnalysis.map(g => ({ Section: 'Gaps', ...g })),
+        ...(result.actionEngine || []).map(a => ({ Section: 'ActionPlan', ...a }))
       ];
-      exportReportToPDF(`AI Growth Strategy: ${domain}`, sections);
+      exportToCSV(flatData, `${fileName}_Dataset`);
+    } else {
+       const sections: { title: string, content: any, type: 'text' | 'table' | 'list' }[] = [
+        { title: 'Executive Summary', content: `Overall Growth Score: ${result.overallScore}. This audit identifies key expansion nodes and competitive vulnerabilities across LLM cohorts. Market Grade: ${result.overallScore > 75 ? 'Prime' : 'Sub-Optimal'}.`, type: 'text' },
+        { title: 'Performance Metrics', content: result.performanceMetrics, type: 'table' },
+        { title: 'Competitive Benchmark', content: result.competitorBenchmark.map(c => ({ Name: c.name, Share: `${c.marketShare}%`, Strengths: c.strengths.join(', '), Vulnerabilities: c.weaknesses.join(', ') })), type: 'table' },
+        { title: 'Neural Gap Analysis', content: result.gapAnalysis.map(g => ({ Query: g.query, "Top Competitor": g.topCompetitor, Impact: g.potentialImpact })), type: 'table' },
+        { title: 'Topic Trajectories (Trending)', content: result.trends.trending, type: 'list' },
+        { title: 'Topic Trajectories (Declining)', content: result.trends.declining, type: 'list' },
+        { title: 'Content Cluster Strategy', content: result.strategy.content, type: 'list' },
+        { title: 'GEO Execution Tactics', content: result.strategy.geo, type: 'list' },
+        { title: 'Immediate Action Roadmap', content: result.strategy.actionableSteps, type: 'list' }
+      ];
+
+      if (result.actionEngine && result.actionEngine.length > 0) {
+        sections.push({
+          title: 'Action Engine Deployment',
+          content: result.actionEngine.map(a => ({ Issue: a.issue, Priority: a.priority, Impact: `${a.impactScore}/100`, Category: a.category })),
+          type: 'table'
+        });
+      }
+
+      if (format === 'pdf') {
+        exportReportToPDF(title, sections);
+      } else if (format === 'doc') {
+        exportToDOC(title, sections);
+      }
     }
-    toast.success(`Exporting as ${format.toUpperCase()}`);
+    toast.success(`Synthesizing ${format.toUpperCase()} export...`);
   };
 
   return (
@@ -142,18 +164,21 @@ export default function GrowthIntelligence() {
         <div className="flex items-center gap-3 w-full md:w-auto">
           {result && (
             <DropdownMenu>
-              <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline" }), "rounded-2xl border-zinc-200 h-12 px-6 font-bold text-zinc-400 hover:text-zinc-950 flex items-center justify-center")}>
+              <DropdownMenuTrigger className="rounded-2xl bg-zinc-950 text-white h-12 px-6 font-bold hover:bg-zinc-800 flex items-center justify-center shadow-xl shadow-zinc-950/20 transition-all active:scale-95">
                  <Download size={16} className="mr-2" /> Export
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="bg-white border-zinc-200 rounded-xl overflow-hidden min-w-[140px]">
-                <DropdownMenuItem onClick={() => exportGrowthReport('pdf')} className="flex items-center gap-2 p-3 text-[10px] font-bold cursor-pointer hover:bg-zinc-50">
-                  <FileText size={14} className="text-rose-500" /> PDF Report
+              <DropdownMenuContent align="end" className="bg-white border-zinc-200 rounded-xl overflow-hidden min-w-[200px] z-[100] shadow-2xl">
+                <DropdownMenuItem onClick={() => exportGrowthReport('pdf')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                  <FileText size={14} className="text-rose-500" /> Strategic PDF Audit
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportGrowthReport('csv')} className="flex items-center gap-2 p-3 text-[10px] font-bold cursor-pointer hover:bg-zinc-50">
-                  <FileSpreadsheet size={14} className="text-emerald-500" /> CSV Metrics
+                <DropdownMenuItem onClick={() => exportGrowthReport('doc')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                  <FileText size={14} className="text-indigo-500" /> Growth Blueprint DOC
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportGrowthReport('json')} className="flex items-center gap-2 p-3 text-[10px] font-bold cursor-pointer hover:bg-zinc-50">
-                  <FileJson size={14} className="text-amber-500" /> JSON Raw
+                <DropdownMenuItem onClick={() => exportGrowthReport('csv')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                  <FileSpreadsheet size={14} className="text-emerald-500" /> Dataset CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportGrowthReport('json')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                  <FileJson size={14} className="text-amber-500" /> Neural JSON
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -68,7 +68,7 @@ export default function Signup() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4">
               <div className="space-y-2 text-left group">
-                <Label htmlFor="name" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Core Operator Identity</Label>
+                <Label htmlFor="name" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Full Name</Label>
                 <Input 
                   id="name" 
                   placeholder="Lexington Dev" 
@@ -79,7 +79,7 @@ export default function Signup() {
                 />
               </div>
               <div className="space-y-2 text-left group">
-                <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Network Endpoint</Label>
+                <Label htmlFor="email" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Email Id</Label>
                 <Input 
                   id="email" 
                   type="email" 
@@ -91,7 +91,7 @@ export default function Signup() {
                 />
               </div>
               <div className="space-y-2 text-left group">
-                <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Encryption Key</Label>
+                <Label htmlFor="password" className="text-[10px] font-bold uppercase tracking-[0.3em] text-zinc-400 group-focus-within:text-zinc-950 transition-colors">Password</Label>
                 <Input 
                   id="password" 
                   type="password" 
@@ -131,8 +131,8 @@ export default function Signup() {
           initial={{ scale: 1.1, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 1.5, ease: "easeOut" }}
-          src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=2601" 
-          alt="Minimalist Architecture" 
+          src="https://images.unsplash.com/photo-1526628953301-3e589a6a8b74?auto=format&fit=crop&q=80&w=2606" 
+          alt="GEO Data Visualization" 
           className="absolute inset-0 w-full h-full object-cover"
           referrerPolicy="no-referrer"
         />

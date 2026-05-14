@@ -100,8 +100,8 @@ export const ActionEngine: React.FC<ActionEngineProps> = ({
             <Zap className="w-6 h-6 text-indigo-400" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">{title}</h2>
-            <p className="text-slate-400">Context-aware fixes with execution intelligence</p>
+            <h2 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">{title}</h2>
+            <p className="text-zinc-500 dark:text-slate-400">Context-aware fixes with execution intelligence</p>
           </div>
         </div>
 
@@ -143,7 +143,7 @@ export const ActionEngine: React.FC<ActionEngineProps> = ({
                   
                   return (
                     <motion.div
-                      key={action.issue}
+                      key={`${category}-${idx}`}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       className={`

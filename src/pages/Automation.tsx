@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
   Play, 
@@ -27,9 +27,11 @@ import {
   FileCode,
   ShieldCheck,
   Send,
-  Search
+  Search,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
@@ -46,15 +48,28 @@ import {
 } from "../components/ui/dropdown-menu";
 
 export default function Automation() {
-  const [domain, setDomain] = useState('');
-  const [trigger, setTrigger] = useState('');
-  const [context, setContext] = useState('');
+  const { reports, setReport, updateReport, clearReport } = useAppStore();
+  const persistedData = reports.automation;
+
+  const [domain, setDomain] = useState(() => persistedData?.input?.domain || '');
+  const [trigger, setTrigger] = useState(() => persistedData?.input?.trigger || '');
+  const [context, setContext] = useState(() => persistedData?.input?.context || '');
   
   const [loading, setLoading] = useState(false);
-  const [automationResult, setAutomationResult] = useState<any>(null);
-  const [logs, setLogs] = useState<any[]>([
+  const [automationResult, setAutomationResult] = useState<any>(persistedData?.result?.automationResult || null);
+  const [logs, setLogs] = useState<any[]>(persistedData?.result?.logs || [
     { id: '1', time: 'Initial', event: 'SYSTEM_READY', status: 'INFO' },
   ]);
+
+  useEffect(() => {
+    if (persistedData) {
+      if (persistedData.input?.domain) setDomain(persistedData.input.domain);
+      if (persistedData.input?.trigger) setTrigger(persistedData.input.trigger);
+      if (persistedData.input?.context) setContext(persistedData.input.context);
+      if (persistedData.result?.automationResult) setAutomationResult(persistedData.result.automationResult);
+      if (persistedData.result?.logs) setLogs(persistedData.result.logs);
+    }
+  }, []);
 
   const exportActivityLogs = () => {
     const fileName = `Activity_Logs_${Date.now()}`;
@@ -68,7 +83,8 @@ export default function Automation() {
       return;
     }
     setLoading(true);
-    setLogs(prev => [...prev, { id: Date.now().toString(), time: new Date().toLocaleTimeString(), event: 'PROTOCOL_INITIATED', status: 'INFO' }]);
+    const newLogs = [...logs, { id: Date.now().toString(), time: new Date().toLocaleTimeString(), event: 'PROTOCOL_INITIATED', status: 'INFO' }];
+    setLogs(newLogs);
     
     try {
       const result = await processAutomationTrigger({
@@ -76,16 +92,20 @@ export default function Automation() {
         trigger,
         context
       });
-      setAutomationResult(result);
-      setLogs(prev => [
-        ...prev, 
+      const finalLogs = [
+        ...newLogs, 
         { id: Date.now().toString() + '1', time: new Date().toLocaleTimeString(), event: 'TRIGGER_MATCH_SCAN', status: 'SUCCESS' },
         { id: Date.now().toString() + '2', time: new Date().toLocaleTimeString(), event: 'INTELLIGENCE_ROUTING', status: 'SUCCESS' }
-      ]);
+      ];
+      setAutomationResult(result);
+      setLogs(finalLogs);
+      setReport('automation', { domain, trigger, context }, { automationResult: result, logs: finalLogs });
       toast.success("Automation sequence executed");
     } catch (err) {
       toast.error("Automation protocol failed");
-      setLogs(prev => [...prev, { id: Date.now().toString(), time: new Date().toLocaleTimeString(), event: 'PROTOCOL_ERROR', status: 'ALERT' }]);
+      const errorLogs = [...newLogs, { id: Date.now().toString(), time: new Date().toLocaleTimeString(), event: 'PROTOCOL_ERROR', status: 'ALERT' }];
+      setLogs(errorLogs);
+      setReport('automation', { domain, trigger, context }, { automationResult, logs: errorLogs });
     } finally {
       setLoading(false);
     }
@@ -110,6 +130,23 @@ export default function Automation() {
                 {loading ? <Loader2 className="animate-spin mr-2" /> : <Play size={18} className="mr-2" />}
                 Fire Logic Node
              </Button>
+
+             {automationResult && (
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    clearReport('automation');
+                    setDomain('');
+                    setTrigger('');
+                    setContext('');
+                    setLogs([]);
+                    toast.info('Protocol reset');
+                  }}
+                  className="h-14 px-6 rounded-2xl border-zinc-200 dark:border-zinc-800 font-bold text-sm bg-white dark:bg-zinc-900 shadow-sm transition-all"
+                >
+                  <XCircle size={18} className="mr-2 text-rose-500" /> Reset
+                </Button>
+             )}
           </div>
        </header>
 
@@ -170,8 +207,8 @@ export default function Automation() {
                          <Layout size={16} className="text-indigo-400" />
                       </div>
                       <div className="space-y-6">
-                         {automationResult.reportingMetrics.map((metric: any) => (
-                            <div key={metric.label} className="flex items-center justify-between">
+                         {automationResult.reportingMetrics.map((metric: any, idx: number) => (
+                            <div key={`metric-${idx}`} className="flex items-center justify-between">
                                <div className="space-y-1">
                                   <div className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">{metric.label}</div>
                                   <div className="text-2xl font-black tracking-tight">{metric.value}</div>

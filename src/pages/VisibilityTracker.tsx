@@ -32,13 +32,17 @@ import {
   Trash2,
   Plus,
   Network,
-  Activity,
-  Zap
+  Zap,
+  Download,
+  FileSpreadsheet,
+  FileJson,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from "@google/genai";
 import { toast } from 'sonner';
 import axios from 'axios';
+import { useAppStore } from '../lib/store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
@@ -61,11 +65,16 @@ import {
   PieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
   LineChart,
   Line
 } from 'recharts';
+import { exportToJSON, exportToCSV, exportReportToPDF, exportToDOC } from '../lib/exportUtils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 const VisibilityGauge = ({ score }: { score: number }) => {
   const rotation = (score / 100) * 180 - 90; // -90 to 90 degrees
   const getStatus = (s: number) => {
@@ -100,17 +109,17 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const researchModel = "gemini-3-flash-preview";
 
 export default function VisibilityTracker() {
+  const { reports, setReport, clearReport } = useAppStore();
   const navigate = useNavigate();
-  const [domain, setDomain] = useState('');
-  const [queries, setQueries] = useState<string[]>(['']);
-  const [competitors, setCompetitors] = useState<string[]>([]);
+  const [domain, setDomain] = useState(reports.visibilityTracker?.input?.domain || '');
+  const [queries, setQueries] = useState<string[]>(reports.visibilityTracker?.input?.queries || ['']);
+  const [competitors, setCompetitors] = useState<string[]>(reports.visibilityTracker?.input?.competitors || []);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<any>(reports.visibilityTracker?.result || null);
   const [history, setHistory] = useState<any[]>([]);
   const [isPolling, setIsPolling] = useState(false);
   const [activeTab, setActiveTab] = useState('queries');
   const [monitoredItems, setMonitoredItems] = useState<string[]>([]);
-  const [timeframe, setTimeframe] = useState('6M');
   const [modalContent, setModalContent] = useState<{ title: string; type: string; data: any } | null>(null);
 
   // research functionality using Gemini Grounding
@@ -187,38 +196,6 @@ export default function VisibilityTracker() {
       toast.error("Advanced research module encountered a bottleneck. Using cached intelligence.");
       return null;
     }
-  };
-
-  // Filter history based on timeframe
-  const getFilteredHistory = () => {
-    let sourceHistory = history.filter((h: any) => h.input?.domain?.toLowerCase() === domain?.toLowerCase());
-    
-    if (!sourceHistory || sourceHistory.length === 0) {
-      if (!result?.history) return [];
-      sourceHistory = result.history;
-    }
-
-    const now = new Date().getTime();
-    let filtered = sourceHistory;
-
-    // Filter by actual timestamp diff if timestamp data exists, otherwise fallback to slice logic
-    if (timeframe === '1M') {
-      const oneMonthAgo = now - (30 * 24 * 60 * 60 * 1000);
-      filtered = sourceHistory.filter((h: any) => h.timestamp ? new Date(h.timestamp).getTime() >= oneMonthAgo : true);
-      // Fallback slice if no timestamps exist on fallback payload
-      if (filtered.length === sourceHistory.length) filtered = sourceHistory.slice(-5);
-    } else if (timeframe === '6M') {
-      const sixMonthsAgo = now - (180 * 24 * 60 * 60 * 1000);
-      filtered = sourceHistory.filter((h: any) => h.timestamp ? new Date(h.timestamp).getTime() >= sixMonthsAgo : true);
-      if (filtered.length === sourceHistory.length) filtered = sourceHistory.slice(-15);
-    }
-
-    // Map history to chart format
-    return filtered.map((h: any) => ({
-      name: h.name || new Date(h.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      score: h.score,
-      timestamp: h.timestamp || ''
-    }));
   };
 
   // Fetch history on load
@@ -317,6 +294,7 @@ export default function VisibilityTracker() {
       });
       
       setResult(res.data);
+      setReport('visibilityTracker', { domain, queries: cleanQueries, competitors: cleanCompetitors }, res.data);
       setIsPolling(true); 
       fetchHistory();
       toast.success('Live Visibility Research Complete');
@@ -335,6 +313,81 @@ export default function VisibilityTracker() {
     } else {
       setMonitoredItems(prev => [...prev, id]);
       toast.success(`Monitoring established for ${name}`);
+    }
+  };
+
+  const exportTrackerReport = (format: 'pdf' | 'csv' | 'doc' | 'json') => {
+    if (!result) return;
+    const title = `AI Visibility Intelligence: ${domain}`;
+    const fileName = `Visibility_Intelligence_${domain.replace(/[^a-z0-9]/gi, '_')}`;
+
+    if (format === 'json') {
+      exportToJSON(result, fileName);
+      return;
+    }
+
+    const sections: { title: string, content: any, type: 'text' | 'table' | 'list' }[] = [
+      { title: 'Executive KPI Summary', content: `Brand Visibility Score: ${result.score}/100. Status: ${result.level} Presence. Mentions: ${result.mentions?.count || 0}/${result.mentions?.total || 0} (${result.mentions?.percentage || 0}% coverage).`, type: 'text' },
+      { title: 'Engine Breakdown', content: (result.engineBreakdown || []).map((e: any) => ({ Engine: e.name, Score: e.score, Presence: `${e.presenceRate}%` })), type: 'table' },
+      { title: 'Sentiment Analysis', content: `Overall Sentiment: ${result.sentimentLayer.score}/100 (Breakdown: ${result.sentimentLayer.breakdown.positive}% Pos, ${result.sentimentLayer.breakdown.neutral}% Neut, ${result.sentimentLayer.breakdown.negative}% Neg). Trend: ${result.sentimentLayer.trend}.`, type: 'text' },
+      { 
+        title: 'Hallucination Audit', 
+        content: (result.hallucinationAudit || []).length > 0 
+          ? (result.hallucinationAudit || []).map((a: any) => ({ Engine: a.engine, Issue: a.issue, Correction: a.correctInfo, Severity: a.severity })) 
+          : [{ Engine: 'N/A', Issue: 'None Detected', Correction: 'N/A', Severity: 'Low' }], 
+        type: 'table' 
+      },
+      { title: 'Semantic Insights', content: (result.insights || []).map((i: any) => i.summary || i), type: 'list' },
+      { title: 'Optimization Roadmap', content: (result.recommendations || []).map((r: any) => r.summary || r), type: 'list' },
+      { 
+        title: 'Query Node Performance', 
+        content: (result.queryLevelResults || []).map((q: any) => ({ 
+          Query: q.query, 
+          "Visibility": q.appeared ? 'Detected' : 'Missing', 
+          Position: q.avgPosition || 'N/A',
+          Sentiment: q.sentiment 
+        })), 
+        type: 'table' 
+      },
+      { 
+        title: 'Strategic Opportunities', 
+        content: (result.topicOpportunities || []).map((o: any) => ({ 
+          Opportunity: o.name, 
+          Gap: o.gap, 
+          Difficulty: o.difficulty,
+          ExpectedImpact: o.strategy?.expectedImpact || 'Unknown'
+        })), 
+        type: 'table' 
+      },
+      { 
+        title: 'Intelligence Sources', 
+        content: (result.citedSources || []).map((s: any) => ({ 
+          Domain: s.domain, 
+          Trust: s.trust, 
+          Mentions: s.mentions 
+        })), 
+        type: 'table' 
+      }
+    ];
+
+    if (result.actionEngine && result.actionEngine.length > 0) {
+      sections.push({
+        title: 'Neural Action Roadmap',
+        content: result.actionEngine.map((a: any) => ({ Issue: a.issue, Change: a.change, Priority: a.priority, Impact: `${a.impactScore}/100` })),
+        type: 'table'
+      });
+    }
+
+    if (format === 'csv') {
+      const flatData = sections.filter(s => s.type === 'table' || s.type === 'list').flatMap(s => {
+        if (s.type === 'table') return s.content.map((row: any) => ({ Section: s.title, ...row }));
+        return s.content.map((item: string) => ({ Section: s.title, Value: item }));
+      });
+      exportToCSV(flatData, fileName);
+    } else if (format === 'pdf') {
+      exportReportToPDF(title, sections);
+    } else if (format === 'doc') {
+      exportToDOC(title, sections);
     }
   };
 
@@ -448,13 +501,54 @@ export default function VisibilityTracker() {
                 </Button>
              </div>
 
-             <Button 
-               type="submit" 
-               disabled={loading}
-               className="h-14 w-full bg-zinc-950 hover:bg-zinc-800 text-white rounded-2xl font-bold shadow-xl shadow-zinc-500/10 active:scale-[0.98] transition-all"
-             >
-                {loading ? <Loader2 className="animate-spin" /> : <>Initiate Intelligence Scan <ArrowRight size={16} className="ml-2" /></>}
-             </Button>
+              <div className="flex flex-col md:flex-row w-full gap-4">
+                <Button 
+                  type="submit" 
+                  disabled={loading}
+                  className="h-14 flex-1 bg-zinc-950 hover:bg-zinc-800 text-white rounded-2xl font-bold shadow-xl shadow-zinc-500/10 active:scale-[0.98] transition-all"
+                >
+                   {loading ? <Loader2 className="animate-spin" /> : <>Initiate Intelligence Scan <ArrowRight size={16} className="ml-2" /></>}
+                </Button>
+
+                {result && (
+                  <Button 
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      clearReport('visibilityTracker');
+                      setDomain('');
+                      setQueries(['']);
+                      setCompetitors(['']);
+                      toast.info('Tracker cleared');
+                    }}
+                    className="h-14 px-8 rounded-2xl border-zinc-200 font-bold bg-white hover:bg-zinc-50 dark:bg-zinc-900 transition-all shadow-sm"
+                  >
+                    <XCircle size={18} className="mr-2 text-rose-500" /> Reset
+                  </Button>
+                )}
+
+                {result && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="h-14 px-8 rounded-2xl bg-zinc-950 hover:bg-zinc-800 text-white font-bold transition-all shadow-xl shadow-zinc-950/20 active:scale-95 inline-flex items-center justify-center">
+                      <Download size={18} className="mr-2" /> Export
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="bg-white border-zinc-100 rounded-xl overflow-hidden min-w-[220px] shadow-2xl z-[100]">
+                      <DropdownMenuItem onClick={() => exportTrackerReport('pdf')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                        <FileText size={14} className="text-rose-500" /> Export Intelligence PDF
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportTrackerReport('doc')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                        <FileText size={14} className="text-indigo-500" /> Professional DOC Audit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportTrackerReport('csv')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                        <FileSpreadsheet size={14} className="text-emerald-500" /> Metrics CSV Dataset
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportTrackerReport('json')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                        <FileJson size={14} className="text-amber-500" /> Raw Neural JSON
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
           </form>
         </div>
       </section>
@@ -470,74 +564,23 @@ export default function VisibilityTracker() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Visibility Score Gauge */}
                 <div 
-                  className="lg:col-span-3 aesthetic-card p-10 flex flex-col items-center justify-between cursor-pointer hover:border-zinc-950 transition-all group relative overflow-hidden"
+                  className="lg:col-span-12 aesthetic-card p-10 flex flex-col items-center justify-center cursor-pointer hover:border-zinc-950 transition-all group relative overflow-hidden h-full"
                   onClick={() => navigate('/visibility/report', { state: { result, domain } })}
                 >
                    <div className="absolute top-4 right-4 text-zinc-300 group-hover:text-zinc-950 transition-colors">
                       <Info size={16} />
                    </div>
-                   <div className="w-full text-left mb-6">
+                   <div className="text-center mb-6">
                       <h4 className="text-lg font-bold tracking-tight">AI Visibility KPI</h4>
                       <p className="text-xs text-muted-foreground">Aggregated across all query nodes</p>
                    </div>
                    <VisibilityGauge score={result.score} />
-                   <div className="mt-8 p-4 bg-zinc-100 rounded-2xl text-[10px] font-medium text-muted-foreground leading-relaxed text-center group-hover:bg-zinc-950 group-hover:text-white transition-colors">
-                      View Detailed Scan Report
+                   <div className="mt-8 px-8 py-2 bg-zinc-100 rounded-full text-[10px] font-black uppercase tracking-widest text-muted-foreground group-hover:bg-zinc-950 group-hover:text-white transition-all">
+                      View Detailed Analysis Report
                    </div>
                 </div>
 
-               {/* Main Metrics & Chart */}
-               <div className="lg:col-span-9 aesthetic-card p-0 flex flex-col overflow-hidden">
-                  <div className="p-8 border-b border-zinc-100 flex flex-col md:flex-row md:items-center justify-between bg-zinc-50/30">
-                     <div className="flex flex-wrap gap-8">
-                        <div>
-                           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Total Mentions</div>
-                           <div className="flex items-baseline gap-2">
-                              <span className="text-2xl font-black">{result.mentions.count}/{result.mentions.total}</span>
-                              <span className="text-[10px] font-bold text-emerald-500">Appeared in {result.mentions.percentage}%</span>
-                           </div>
-                        </div>
-                        <div>
-                           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Status</div>
-                           <div className="flex items-center gap-2">
-                              <div className={`w-2 h-2 rounded-full ${result.level === 'High' ? 'bg-emerald-500' : result.level === 'Medium' ? 'bg-amber-500' : 'bg-rose-500'}`} />
-                              <span className="text-sm font-bold">{result.level} Presence</span>
-                           </div>
-                        </div>
-                        {isPolling && (
-                           <div className="flex items-center gap-2 px-3 py-1 bg-zinc-950 text-white text-[9px] font-bold uppercase tracking-widest rounded-full animate-pulse self-center">
-                              <Loader2 size={10} className="animate-spin" /> Live Updates On
-                           </div>
-                        )}
-                     </div>
-                     <div className="flex gap-1 mt-4 md:mt-0 p-1 bg-white rounded-xl border border-zinc-100 shadow-sm self-end md:self-auto">
-                        {['1M', '6M', 'ALL'].map(p => (
-                           <button 
-                             key={p} 
-                             onClick={() => setTimeframe(p)}
-                             className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all ${p === timeframe ? 'bg-zinc-950 text-white shadow-md' : 'text-zinc-400 hover:text-zinc-950'}`}
-                           >
-                              {p}
-                           </button>
-                        ))}
-                     </div>
-                  </div>
-                  <div className="p-8 flex-1">
-                     <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-sm font-bold tracking-tight">Visibility Trend Over Time</h4>
-                     </div>
-                     <ResponsiveContainer width="100%" height={250}>
-                        <BarChart data={getFilteredHistory()}>
-                           <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#a1a1aa', fontSize: 10, fontWeight: 600 }} dy={10} />
-                           <YAxis hide />
-                           <Tooltip 
-                             contentStyle={{ border: 'none', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', fontSize: '11px', fontWeight: 600 }}
-                           />
-                           <Bar dataKey="score" fill="#18181b" radius={[4, 4, 0, 0]} animationDuration={1000} />
-                        </BarChart>
-                     </ResponsiveContainer>
-                  </div>
-               </div>
+
             </div>
 
             {/* Distribution */}
@@ -550,7 +593,7 @@ export default function VisibilityTracker() {
                   </div>
                   <div className="space-y-8">
                      {[...result.engineBreakdown].sort((a: any, b: any) => b.score - a.score).map((engine: any, i: number) => (
-                        <div key={engine.name} className="space-y-3">
+                        <div key={`engine-${i}`} className="space-y-3">
                            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-widest">
                               <span className="text-zinc-600 flex items-center gap-2"><span className="text-zinc-400">#{i + 1}</span> {engine.name}</span>
                               <div className="flex gap-4">
@@ -580,7 +623,7 @@ export default function VisibilityTracker() {
                      </div>
                      <div className="space-y-5">
                         {result.competitorComparison.map((comp: any, i: number) => (
-                           <div key={comp.brand} className="p-4 rounded-xl border border-zinc-100 flex items-center justify-between">
+                           <div key={`comp-${i}`} className="p-4 rounded-xl border border-zinc-100 flex items-center justify-between">
                               <div className="flex items-center gap-4">
                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-amber-100 text-amber-700' : 'bg-zinc-100 text-zinc-500'}`}>
                                     #{i + 1}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Layout, 
   Search, 
@@ -16,9 +16,11 @@ import {
   Zap,
   Target,
   ArrowRight,
-  ChevronLeft
+  ChevronLeft,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import { Card } from '../components/ui/card';
 import { Button, buttonVariants } from '../components/ui/button';
 import { cn } from '../lib/utils';
@@ -36,20 +38,22 @@ import {
 } from "../components/ui/dropdown-menu";
 
 export default function HumanoidBlogLab() {
-  const [websiteUrl, setWebsiteUrl] = useState('');
-  const [brandName, setBrandName] = useState('');
-  const [blogTopic, setBlogTopic] = useState('');
-  const [primaryKey, setPrimaryKey] = useState('');
+  const { reports, setReport, clearReport } = useAppStore();
+  const [websiteUrl, setWebsiteUrl] = useState(reports.humanoidBlogLab?.input?.websiteUrl || '');
+  const [brandName, setBrandName] = useState(reports.humanoidBlogLab?.input?.brandName || '');
+  const [blogTopic, setBlogTopic] = useState(reports.humanoidBlogLab?.input?.blogTopic || '');
+  const [primaryKey, setPrimaryKey] = useState(reports.humanoidBlogLab?.input?.primaryKey || '');
   
-  const [analysisData, setAnalysisData] = useState<any>(null);
-  const [ideas, setIdeas] = useState<any[]>([]);
-  const [selectedIdea, setSelectedIdea] = useState<any>(null);
+  const reportData = reports.humanoidBlogLab?.result || {};
+  const [analysisData, setAnalysisData] = useState<any>(reportData.analysisData || null);
+  const [ideas, setIdeas] = useState<any[]>(reportData.ideas || []);
+  const [selectedIdea, setSelectedIdea] = useState<any>(reportData.selectedIdea || null);
   
-  const [researchResults, setResearchResults] = useState<any[]>([]);
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [generatedBlog, setGeneratedBlog] = useState('');
+  const [researchResults, setResearchResults] = useState<any[]>(reportData.researchResults || []);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(reportData.selectedKeys || []);
+  const [generatedBlog, setGeneratedBlog] = useState(reportData.generatedBlog || '');
   
-  const [blogStep, setBlogStep] = useState<'input' | 'ideas' | 'research' | 'reading'>('input');
+  const [blogStep, setBlogStep] = useState<'input' | 'ideas' | 'research' | 'reading'>(reportData.blogStep || 'input');
   
   const [analyzing, setAnalyzing] = useState(false);
   const [researching, setResearching] = useState(false);
@@ -57,6 +61,20 @@ export default function HumanoidBlogLab() {
   const [isHumanizing, setIsHumanizing] = useState(false);
   const [isChatting, setIsChatting] = useState(false);
   const [chatInput, setChatInput] = useState('');
+
+  const updateReport = (newStep?: string, extraData: any = {}) => {
+    const currentData = {
+      analysisData,
+      ideas,
+      selectedIdea,
+      researchResults,
+      selectedKeys,
+      generatedBlog,
+      blogStep: newStep || blogStep,
+      ...extraData
+    };
+    setReport('humanoidBlogLab', { websiteUrl, brandName, blogTopic, primaryKey }, currentData);
+  };
 
   const handleInitialAnalysis = async () => {
     if (!websiteUrl) return toast.error("Website URL is required for domain analysis");
@@ -69,19 +87,13 @@ export default function HumanoidBlogLab() {
         keywords: primaryKey
       });
       if (result) {
-        setAnalysisData(result.analysis);
-        
-        let finalIdeas = [...(result.ideas || [])];
-        
-        // Safety: If user provided a topic but it's not in the list or was modified,
-        // force the exact user input into the ideas list to guarantee immutability.
+        const ideasResult = [...(result.ideas || [])];
         if (blogTopic.trim()) {
-           const userIdeaIndex = finalIdeas.findIndex(i => i.isUserInput);
+           const userIdeaIndex = ideasResult.findIndex(i => i.isUserInput);
            if (userIdeaIndex !== -1) {
-             finalIdeas[userIdeaIndex].title = blogTopic; // Ensure EXACT match
+             ideasResult[userIdeaIndex].title = blogTopic;
            } else {
-             // If AI missed it, add it manually
-             finalIdeas.unshift({
+             ideasResult.unshift({
                title: blogTopic,
                description: "User-defined custom blog topic.",
                impactScore: 100,
@@ -90,13 +102,28 @@ export default function HumanoidBlogLab() {
              });
            }
         }
-
-        setIdeas(finalIdeas.sort((a: any, b: any) => {
+        const sortedIdeas = ideasResult.sort((a: any, b: any) => {
           if (a.isUserInput) return -1;
           if (b.isUserInput) return 1;
           return b.impactScore - a.impactScore;
-        }));
+        });
+
+        setAnalysisData(result.analysis);
+        setIdeas(sortedIdeas);
         setBlogStep('ideas');
+        
+        setReport('humanoidBlogLab', 
+          { websiteUrl, brandName, blogTopic, primaryKey }, 
+          { 
+            analysisData: result.analysis, 
+            ideas: sortedIdeas, 
+            blogStep: 'ideas',
+            selectedIdea: null,
+            researchResults: [],
+            selectedKeys: [],
+            generatedBlog: ''
+          }
+        );
         toast.success("Domain Intelligence Synchronized");
       }
     } catch (err) {
@@ -112,24 +139,31 @@ export default function HumanoidBlogLab() {
     setBlogStep('research');
     try {
       const data = await performKeywordResearch(idea.title, primaryKey);
-      setResearchResults(data.keywords || []);
+      const kws = data.keywords || [];
+      setResearchResults(kws);
       
-      // Auto-select user-provided keywords and merge with primaryKey logic
-      const userKeywords = (data.keywords || [])
-        .filter((k: any) => k.isUserInput)
-        .map((k: any) => k.keyword);
+      const userKeywords = kws.filter((k: any) => k.isUserInput).map((k: any) => k.keyword);
+      let matchedKeys: string[] = [];
         
       if (primaryKey || userKeywords.length > 0) {
         const pkws = primaryKey.split(',').map(s => s.trim().toLowerCase());
-        const matchedKeywords = (data.keywords || [])
-          .filter((k: any) => pkws.includes(k.keyword.toLowerCase()))
-          .map((k: any) => k.keyword);
-          
-        // Combine unique keywords
-        setSelectedKeys(Array.from(new Set([...userKeywords, ...matchedKeywords])));
-      } else {
-        setSelectedKeys([]);
+        matchedKeys = kws.filter((k: any) => pkws.includes(k.keyword.toLowerCase())).map((k: any) => k.keyword);
       }
+      const combinedKeys = Array.from(new Set([...userKeywords, ...matchedKeys]));
+      setSelectedKeys(combinedKeys);
+
+      setReport('humanoidBlogLab', 
+        { websiteUrl, brandName, blogTopic, primaryKey }, 
+        { 
+          analysisData, 
+          ideas, 
+          blogStep: 'research',
+          selectedIdea: idea,
+          researchResults: kws,
+          selectedKeys: combinedKeys,
+          generatedBlog: ''
+        }
+      );
       toast.success("Keyword clusters identified");
     } catch (err) {
       toast.error("Keyword generation failed");
@@ -142,7 +176,6 @@ export default function HumanoidBlogLab() {
     if (selectedKeys.length === 0) return toast.error("Select at least one keyword");
     setWriting(true);
     try {
-      // Pass 1: Initial Generation
       const initialBlog = await generateHumanoidBlog({
         topic: selectedIdea.title,
         selectedKeywords: selectedKeys,
@@ -152,12 +185,25 @@ export default function HumanoidBlogLab() {
       
       if (!initialBlog) throw new Error("Initial generation failed");
 
-      // Pass 2: Automatic Humanization Refinement (as requested)
       toast.info("Refining humanoid flow...");
       const refinedBlog = await humanizeBlog(initialBlog, selectedIdea.title, brandName);
+      const finalBlog = refinedBlog || initialBlog;
       
-      setGeneratedBlog(refinedBlog || initialBlog);
+      setGeneratedBlog(finalBlog);
       setBlogStep('reading');
+      
+      setReport('humanoidBlogLab', 
+        { websiteUrl, brandName, blogTopic, primaryKey }, 
+        { 
+          analysisData, 
+          ideas, 
+          blogStep: 'reading',
+          selectedIdea,
+          researchResults,
+          selectedKeys,
+          generatedBlog: finalBlog
+        }
+      );
       toast.success("High-fidelity humanoid blog synthesized");
     } catch (err) {
       toast.error("Generation failed");
@@ -170,7 +216,9 @@ export default function HumanoidBlogLab() {
     setIsHumanizing(true);
     try {
       const humanized = await humanizeBlog(generatedBlog, selectedIdea.title, brandName);
-      setGeneratedBlog(humanized || generatedBlog);
+      const finalBlog = humanized || generatedBlog;
+      setGeneratedBlog(finalBlog);
+      updateReport('reading', { generatedBlog: finalBlog });
       toast.success("Content reinforced with human nuance");
     } catch (err) {
       toast.error("Humanization failed");
@@ -191,7 +239,9 @@ export default function HumanoidBlogLab() {
         instruction: chatInput,
         brandName
       });
-      setGeneratedBlog(updated || generatedBlog);
+      const finalBlog = updated || generatedBlog;
+      setGeneratedBlog(finalBlog);
+      updateReport('reading', { generatedBlog: finalBlog });
       setChatInput('');
       toast.success("Blog updated successfully");
     } catch (err) {
@@ -202,7 +252,9 @@ export default function HumanoidBlogLab() {
   };
 
   const toggleKeyword = (kw: string) => {
-    setSelectedKeys(prev => prev.includes(kw) ? prev.filter(k => k !== kw) : [...prev, kw]);
+    const nextKeys = selectedKeys.includes(kw) ? selectedKeys.filter(k => k !== kw) : [...selectedKeys, kw];
+    setSelectedKeys(nextKeys);
+    updateReport('research', { selectedKeys: nextKeys });
   };
 
   const exportBlog = (format: 'pdf' | 'csv' | 'json') => {
@@ -227,6 +279,7 @@ export default function HumanoidBlogLab() {
   };
 
   const resetAll = () => {
+    clearReport('humanoidBlogLab');
     setBlogStep('input');
     setSelectedKeys([]);
     setResearchResults([]);
@@ -399,24 +452,24 @@ export default function HumanoidBlogLab() {
                                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 space-y-2">
                                     <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Core Topics</div>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {(analysisData.coreTopics || []).map((t: string) => (
-                                            <Badge key={t} variant="secondary" className="text-[9px] font-bold bg-white dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700">{t}</Badge>
+                                        {(analysisData.coreTopics || []).map((t: string, i: number) => (
+                                            <Badge key={`core-${i}`} variant="secondary" className="text-[9px] font-bold bg-white dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700">{t}</Badge>
                                         ))}
                                     </div>
                                 </div>
                                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 space-y-2">
                                     <div className="text-[9px] font-black text-rose-400 uppercase tracking-widest">Content Gaps</div>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {(analysisData.contentGaps || []).map((t: string) => (
-                                            <Badge key={t} className="text-[9px] font-bold bg-rose-500/10 text-rose-500 border-none">{t}</Badge>
+                                        {(analysisData.contentGaps || []).map((t: string, i: number) => (
+                                            <Badge key={`gap-${i}`} className="text-[9px] font-bold bg-rose-500/10 text-rose-500 border-none">{t}</Badge>
                                         ))}
                                     </div>
                                 </div>
                                 <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 space-y-2">
                                     <div className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Opportunities</div>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {(analysisData.opportunities || []).map((t: string) => (
-                                            <Badge key={t} className="text-[9px] font-bold bg-indigo-500/10 text-indigo-500 border-none">{t}</Badge>
+                                        {(analysisData.opportunities || []).map((t: string, i: number) => (
+                                            <Badge key={`op-${i}`} className="text-[9px] font-bold bg-indigo-500/10 text-indigo-500 border-none">{t}</Badge>
                                         ))}
                                     </div>
                                 </div>
@@ -583,8 +636,8 @@ export default function HumanoidBlogLab() {
                           <div className="prose prose-zinc dark:prose-invert max-w-none">
                             <div className="p-10 bg-zinc-50 dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 markdown-body text-base font-medium leading-relaxed dark:text-zinc-300 shadow-inner relative overflow-hidden">
                                 <div className="absolute top-0 right-0 p-6 flex flex-wrap justify-end gap-1 pointer-events-none opacity-20">
-                                  {selectedKeys.map(k => (
-                                    <Badge key={k} variant="outline" className="text-[8px] font-bold border-zinc-300">{k}</Badge>
+                                  {selectedKeys.map((k, i) => (
+                                    <Badge key={`${k}-${i}`} variant="outline" className="text-[8px] font-bold border-zinc-300">{k}</Badge>
                                   ))}
                                 </div>
                                 <ReactMarkdown>{generatedBlog}</ReactMarkdown>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Wand2, 
   Save, 
@@ -22,16 +22,18 @@ import {
   ChevronDown,
   ChevronUp,
   FileJson,
-  FileSpreadsheet
+  FileSpreadsheet,
+  XCircle
 } from 'lucide-react';
 import { Button, buttonVariants } from '../components/ui/button';
 import { cn } from '../lib/utils';
 import { Input } from '../components/ui/input';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import ReactMarkdown from 'react-markdown';
 import { generateCitableContent } from '../lib/gemini';
 import { toast } from 'sonner';
-import { exportToJSON, exportToCSV, exportReportToPDF } from '../lib/exportUtils';
+import { exportToJSON, exportToCSV, exportReportToPDF, exportToDOC } from '../lib/exportUtils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,14 +51,15 @@ interface CitableOutput {
 }
 
 export default function ContentGenerator() {
+  const { reports, setReport, clearReport } = useAppStore();
   const [loading, setLoading] = useState(false);
-  const [keywords, setKeywords] = useState('');
-  const [brandName, setBrandName] = useState('');
-  const [brandVoice, setBrandVoice] = useState('Authoritative');
-  const [persona, setPersona] = useState('');
-  const [citationGaps, setCitationGaps] = useState('');
+  const [keywords, setKeywords] = useState(reports.contentGenerator?.input?.keywords || '');
+  const [brandName, setBrandName] = useState(reports.contentGenerator?.input?.brandName || '');
+  const [brandVoice, setBrandVoice] = useState(reports.contentGenerator?.input?.brandVoice || 'Authoritative');
+  const [persona, setPersona] = useState(reports.contentGenerator?.input?.persona || '');
+  const [citationGaps, setCitationGaps] = useState(reports.contentGenerator?.input?.citationGaps || '');
   
-  const [output, setOutput] = useState<CitableOutput | null>(null);
+  const output = (reports.contentGenerator?.result as CitableOutput) || null;
   const [activeStep, setActiveStep] = useState(-1);
   const [activeTab, setActiveTab] = useState<'brief' | 'table' | 'faq' | 'draft'>('brief');
 
@@ -66,7 +69,6 @@ export default function ContentGenerator() {
       return;
     }
     setLoading(true);
-    setOutput(null);
     
     try {
       const pipelineSteps = [0, 1, 2, 3];
@@ -84,7 +86,7 @@ export default function ContentGenerator() {
       });
 
       if (content) {
-        setOutput(content);
+        setReport('contentGenerator', { keywords, brandName, brandVoice, persona, citationGaps }, content);
         toast.success('Citable content synthesized');
       } else {
         toast.error('Synthesis failed. Check engine status.');
@@ -109,32 +111,53 @@ export default function ContentGenerator() {
     toast.success('Copied to clipboard');
   };
 
-  const exportContent = (format: 'pdf' | 'csv' | 'json') => {
+  const exportContent = (format: 'pdf' | 'csv' | 'doc' | 'json') => {
     if (!output) return;
 
-    const fileName = `Content_${keywords.replace(/[^a-z0-9]/gi, '_')}`;
+    const title = `Citable Content Architecture: ${brandName || keywords}`;
+    const fileName = `Content_Audit_${keywords.replace(/[^a-z0-9]/gi, '_')}`;
 
     if (format === 'json') {
-      exportToJSON(output, fileName);
-    } else if (format === 'csv') {
-      exportToCSV([
-        { type: 'Brief', content: output.brief },
-        { type: 'Draft', content: output.draft },
-      ], fileName);
-    } else if (format === 'pdf') {
-      const sections = [
-        { title: 'Content Brief', content: output.brief, type: 'text' as const },
-        { title: 'Comparison Matrix', content: output.comparisonTable.rows.map(row => {
-            const obj: any = {};
-            output.comparisonTable.headers.forEach((h, i) => obj[h] = row[i]);
-            return obj;
-          }), type: 'table' as const },
-        { title: 'Structured FAQs', content: output.faqs.map(f => `${f.question}: ${f.answer}`), type: 'list' as const },
-        { title: 'Final Draft', content: output.draft, type: 'text' as const },
-      ];
-      exportReportToPDF(`Citable Asset Report: ${keywords}`, sections);
+      exportToJSON({
+        input: { brandName, keywords, brandVoice, persona, citationGaps },
+        output
+      }, fileName);
+      return;
     }
-    toast.success(`Exporting as ${format.toUpperCase()}`);
+
+    const sections: { title: string, content: any, type: 'text' | 'table' | 'list' }[] = [
+      { title: 'Project Intelligence Context', content: `Brand: ${brandName || 'N/A'}\nSeed Keywords: ${keywords}\nGrounding Focus: ${citationGaps || 'General Discovery'}\nVoice Profile: ${brandVoice}\nTarget Persona: ${persona || 'N/A'}`, type: 'text' },
+      { title: 'Strategic Content Brief', content: output.brief, type: 'text' },
+      { 
+        title: 'Competitive Comparison Matrix', 
+        content: output.comparisonTable.rows.map(row => {
+          const obj: any = {};
+          output.comparisonTable.headers.forEach((h, i) => obj[h] = row[i]);
+          return obj;
+        }), 
+        type: 'table' 
+      },
+      { title: 'Factual FAQ Snippets', content: output.faqs.map(f => `${f.question}: ${f.answer}`), type: 'list' },
+      { title: 'Final Verified Content Draft', content: output.draft, type: 'text' }
+    ];
+
+    if (format === 'csv') {
+      const flatData = [
+        { Section: 'Metadata', Brand: brandName, Keywords: keywords, Voice: brandVoice, Persona: persona },
+        ...output.comparisonTable.rows.map(row => {
+          const obj: any = { Section: 'ComparisonMatrix' };
+          output.comparisonTable.headers.forEach((h, i) => obj[h] = row[i]);
+          return obj;
+        }),
+        ...output.faqs.map(f => ({ Section: 'FAQSnippet', Question: f.question, Answer: f.answer }))
+      ];
+      exportToCSV(flatData, fileName);
+    } else if (format === 'pdf') {
+      exportReportToPDF(title, sections);
+    } else if (format === 'doc') {
+      exportToDOC(title, sections);
+    }
+    toast.success(`Drafting ${format.toUpperCase()} export...`);
   };
 
   return (
@@ -283,23 +306,26 @@ export default function ContentGenerator() {
                     ))}
                  </div>
                  {output && (
-                   <div className="flex items-center gap-2">
-                      <Button onClick={() => copyToClipboard(activeTab === 'brief' ? output.brief : activeTab === 'draft' ? output.draft : JSON.stringify(output[activeTab as keyof CitableOutput]))} variant="ghost" size="sm" className="h-10 w-10 text-zinc-400 hover:text-zinc-950 rounded-xl">
+                   <div className="flex items-center gap-3">
+                      <Button onClick={() => copyToClipboard(activeTab === 'brief' ? output.brief : activeTab === 'draft' ? output.draft : JSON.stringify(output[activeTab as keyof CitableOutput]))} variant="ghost" size="sm" className="h-10 w-10 text-zinc-400 hover:text-zinc-950 rounded-xl transition-all hover:bg-zinc-100">
                          <Copy size={16} /> 
                       </Button>
                       <DropdownMenu>
-                         <DropdownMenuTrigger className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "h-10 w-10 text-zinc-400 hover:text-zinc-950 rounded-xl flex items-center justify-center")}>
-                           <Download size={16} /> 
+                         <DropdownMenuTrigger className="h-10 px-6 bg-zinc-950 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-800 transition-all shadow-lg shadow-zinc-950/20 active:scale-95 flex items-center justify-center">
+                            <Download size={14} className="mr-2" /> Export Content
                          </DropdownMenuTrigger>
-                         <DropdownMenuContent align="end" className="bg-white border-zinc-200 rounded-xl overflow-hidden min-w-[160px]">
-                            <DropdownMenuItem onClick={() => exportContent('pdf')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50">
-                              <FileText size={14} className="text-rose-500" /> PDF Report
+                         <DropdownMenuContent align="end" className="bg-white border-zinc-200 rounded-xl overflow-hidden min-w-[200px] z-[100] shadow-2xl">
+                            <DropdownMenuItem onClick={() => exportContent('pdf')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                              <FileText size={14} className="text-rose-500" /> Professional PDF Audit
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => exportContent('csv')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50">
-                              <FileSpreadsheet size={14} className="text-emerald-500" /> CSV
+                            <DropdownMenuItem onClick={() => exportContent('doc')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                              <FileText size={14} className="text-indigo-500" /> Authority DOCX Blueprint
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => exportContent('json')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50">
-                              <FileJson size={14} className="text-amber-500" /> JSON
+                            <DropdownMenuItem onClick={() => exportContent('csv')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                              <FileSpreadsheet size={14} className="text-emerald-500" /> Structure CSV Dataset
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => exportContent('json')} className="flex items-center gap-3 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 transition-colors">
+                              <FileJson size={14} className="text-amber-500" /> Neural JSON Manifest
                             </DropdownMenuItem>
                          </DropdownMenuContent>
                        </DropdownMenu>

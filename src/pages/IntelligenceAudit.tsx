@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   BarChart, 
@@ -25,8 +25,10 @@ import {
   Download,
   FileJson,
   FileSpreadsheet,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button, buttonVariants } from '../components/ui/button';
 import { cn } from '../lib/utils';
@@ -44,13 +46,14 @@ import {
 } from "../components/ui/dropdown-menu";
 
 export default function IntelligenceAudit() {
-  const [domain, setDomain] = useState('');
-  const [gscData, setGscData] = useState('');
-  const [claims, setClaims] = useState('');
+  const { reports, setReport, clearReport } = useAppStore();
+  const [domain, setDomain] = useState(reports.intelligenceAudit?.input?.domain || '');
+  const [gscData, setGscData] = useState(reports.intelligenceAudit?.input?.gscData || '');
+  const [claims, setClaims] = useState(reports.intelligenceAudit?.input?.claims || '');
   
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('accuracy');
-  const [auditResult, setAuditResult] = useState<any>(null);
+  const auditResult = reports.intelligenceAudit?.result || null;
 
   const runAudit = async () => {
     if (!domain) {
@@ -58,7 +61,6 @@ export default function IntelligenceAudit() {
       return;
     }
     setLoading(true);
-    setAuditResult(null);
     try {
       const result = await conductIntelligenceAudit({
         url: domain,
@@ -67,7 +69,7 @@ export default function IntelligenceAudit() {
       });
       
       if (result) {
-        setAuditResult(result);
+        setReport('intelligenceAudit', { domain, gscData, claims }, result);
         toast.success('System Audit Complete');
       } else {
         toast.error('Audit produced no data');
@@ -109,7 +111,7 @@ export default function IntelligenceAudit() {
                 <ShieldCheck size={12} className="text-emerald-400" /> Intelligence Audit v4.1
              </div>
              <h2 className="text-4xl font-black tracking-tighter text-zinc-950">Deep Model Assessment</h2>
-             <p className="text-zinc-500 font-medium max-w-lg">Verify brand accuracy, measure semantic drift, and audit bot accessibility across global LLM nodes.</p>
+             <p className="text-zinc-600 text-sm font-medium max-w-lg">Verify brand accuracy, measure semantic drift, and audit bot accessibility across global LLM nodes.</p>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
              <Button 
@@ -120,6 +122,22 @@ export default function IntelligenceAudit() {
                 {loading ? <Loader2 className="animate-spin mr-2" /> : <RefreshCw size={18} className="mr-2" />}
                 Initiate Full Audit
              </Button>
+
+             {auditResult && (
+               <Button 
+                 variant="outline"
+                 onClick={() => {
+                   clearReport('intelligenceAudit');
+                   setDomain('');
+                   setGscData('');
+                   setClaims('');
+                   toast.info('Audit cleared');
+                 }}
+                 className="h-14 px-6 rounded-2xl border-zinc-200 dark:border-zinc-800 font-bold text-sm bg-white dark:bg-zinc-900 transition-all shadow-sm"
+               >
+                 <XCircle size={18} className="mr-2 text-rose-500" /> Clear
+               </Button>
+             )}
           </div>
        </header>
 
@@ -129,7 +147,7 @@ export default function IntelligenceAudit() {
              <Card className="aesthetic-card p-8 space-y-6 border-zinc-200">
                 <div className="space-y-4">
                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Domain Source</label>
+                      <label className="text-xs font-black text-zinc-400 uppercase tracking-widest ml-1">Domain Source</label>
                       <Input 
                          value={domain}
                          onChange={(e) => setDomain(e.target.value)}
@@ -139,7 +157,7 @@ export default function IntelligenceAudit() {
                    </div>
 
                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Search Console Data</label>
+                      <label className="text-xs font-black text-zinc-400 uppercase tracking-widest ml-1">Search Console Data</label>
                       <textarea 
                          value={gscData}
                          onChange={(e) => setGscData(e.target.value)}
@@ -149,7 +167,7 @@ export default function IntelligenceAudit() {
                    </div>
 
                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-1">Key Factual Claims</label>
+                      <label className="text-xs font-black text-zinc-400 uppercase tracking-widest ml-1">Key Factual Claims</label>
                       <textarea 
                          value={claims}
                          onChange={(e) => setClaims(e.target.value)}
@@ -167,13 +185,13 @@ export default function IntelligenceAudit() {
                   </div>
                   <div className="relative z-10 space-y-6">
                      <div>
-                        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500">Reliability Index</span>
+                        <span className="text-xs font-black uppercase tracking-[0.3em] text-zinc-500">Reliability Index</span>
                         <div className="text-7xl font-black tracking-tighter my-2">{auditResult.overallReliabilityScore}</div>
-                        <Badge className="bg-emerald-500/10 text-emerald-400 border-none px-4 h-7 text-[9px] font-black uppercase">
+                        <Badge className="bg-emerald-500/10 text-emerald-400 border-none px-4 h-7 text-[10px] font-black uppercase">
                            High Confidence Rank
                         </Badge>
                      </div>
-                     <p className="text-xs text-zinc-400 font-medium leading-relaxed italic">
+                     <p className="text-sm text-zinc-400 font-medium leading-relaxed italic">
                         "Your brand exhibits a {auditResult.overallReliabilityScore}% alignment with latent training data. Critical hallucination risks detected in secondary service claims."
                      </p>
                   </div>
@@ -206,8 +224,8 @@ export default function IntelligenceAudit() {
                
                {auditResult && (
                   <DropdownMenu>
-                    <DropdownMenuTrigger className={cn(buttonVariants({ size: "sm" }), "bg-zinc-950 text-white rounded-xl h-8 font-black uppercase text-[9px] tracking-widest px-4 flex items-center")}>
-                      <Download size={12} className="mr-2"/> Export
+                    <DropdownMenuTrigger className={cn(buttonVariants({ size: "sm" }), "bg-zinc-950 text-white rounded-xl h-10 font-black uppercase text-[10px] tracking-widest px-6 flex items-center shadow-lg shadow-zinc-950/20 active:scale-95 transition-all")}>
+                      <Download size={14} className="mr-2"/> Export Audit
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-white border-zinc-200 rounded-xl overflow-hidden min-w-[140px]">
                       <DropdownMenuItem onClick={() => exportAudit('pdf')} className="flex items-center gap-2 p-3 text-[10px] font-bold cursor-pointer hover:bg-zinc-50">
@@ -276,9 +294,9 @@ export default function IntelligenceAudit() {
                              <table className="w-full text-left">
                                 <thead className="bg-zinc-50/50 border-b border-zinc-100">
                                    <tr>
-                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-zinc-400">Claim to Verify</th>
-                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-zinc-400">Accuracy</th>
-                                      <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-zinc-400">Foundational Source</th>
+                                      <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-zinc-400">Claim to Verify</th>
+                                      <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-zinc-400">Accuracy</th>
+                                      <th className="px-8 py-5 text-xs font-black uppercase tracking-widest text-zinc-400">Foundational Source</th>
                                    </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-100">
@@ -288,7 +306,7 @@ export default function IntelligenceAudit() {
                                             <div className="flex flex-col gap-1">
                                                <span className="text-sm font-bold tracking-tight text-zinc-900">"{item.claim}"</span>
                                                <div className="flex gap-2">
-                                                  <Badge className={`text-[8px] font-black uppercase px-2 h-5 border-none ${item.status === 'Verified' ? 'bg-emerald-500/10 text-emerald-600' : item.status === 'Hallucinated' ? 'bg-rose-500/10 text-rose-600' : 'bg-amber-500/10 text-amber-600'}`}>
+                                                  <Badge className={`text-[10px] font-black uppercase px-2 h-5 border-none ${item.status === 'Verified' ? 'bg-emerald-500/10 text-emerald-600' : item.status === 'Hallucinated' ? 'bg-rose-500/10 text-rose-600' : 'bg-amber-500/10 text-amber-600'}`}>
                                                      {item.status}
                                                   </Badge>
                                                </div>
@@ -318,7 +336,7 @@ export default function IntelligenceAudit() {
                                 <Card key={i} className="aesthetic-card p-10 space-y-8 group overflow-hidden border-zinc-200 shadow-xl rounded-[2.5rem]">
                                    <div className="flex items-center justify-between">
                                       <div className="space-y-1">
-                                         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">Semantic Vector</span>
+                                         <span className="text-xs font-black uppercase tracking-[0.3em] text-zinc-400">Semantic Vector</span>
                                          <h4 className="text-2xl font-black text-zinc-950">{item.dimension}</h4>
                                       </div>
                                       <div className="text-right">
@@ -368,17 +386,17 @@ export default function IntelligenceAudit() {
                                          <div>
                                             <div className="flex items-center gap-3">
                                                <h4 className="text-lg font-black text-zinc-950">{log.crawler}</h4>
-                                               <Badge className={`${log.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'} border-none text-[8px] font-black uppercase`}>
+                                               <Badge className={`${log.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'} border-none text-[10px] font-black uppercase`}>
                                                   {log.status}
                                                </Badge>
                                             </div>
-                                            <p className="text-[11px] text-zinc-500 font-bold uppercase tracking-widest mt-1">Visit Frequency: {log.frequency}</p>
+                                            <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mt-1">Visit Frequency: {log.frequency}</p>
                                          </div>
                                       </div>
                                       <div className="flex-1 max-w-md">
                                          <div className="flex items-start gap-3 bg-white p-4 rounded-xl border border-zinc-200">
                                             <Zap size={14} className="text-amber-500 mt-0.5 shrink-0" />
-                                            <p className="text-[11px] font-medium text-zinc-600 leading-relaxed">{log.recommendations}</p>
+                                            <p className="text-xs font-medium text-zinc-600 leading-relaxed">{log.recommendations}</p>
                                          </div>
                                       </div>
                                    </div>

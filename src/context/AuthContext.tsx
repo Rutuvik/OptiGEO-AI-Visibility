@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useAppStore } from '../lib/store';
 
 interface User {
   id: string;
@@ -51,8 +52,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('last_analyzed_domain');
+    localStorage.removeItem('appliedFixes');
     setToken(null);
     setUser(null);
+    useAppStore.getState().clearAllReports();
   };
 
   return (

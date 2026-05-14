@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { refinePromptWithBenchmarking } from '../lib/gemini';
 import { 
   Terminal, 
@@ -23,7 +23,8 @@ import {
   Split,
   BarChart2,
   RefreshCw,
-  Plus
+  Plus,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
@@ -36,13 +37,26 @@ import {
   Legend, Cell
 } from 'recharts';
 import { toast } from 'sonner';
+import { useAppStore } from '../lib/store';
 
 export default function PromptTestingLab() {
-  const [starterPrompt, setStarterPrompt] = useState('');
-  const [variables, setVariables] = useState('');
+  const { reports, setReport, clearReport } = useAppStore();
+  const persistedData = reports.promptTestingLab;
+
+  const [starterPrompt, setStarterPrompt] = useState(() => persistedData?.input?.starterPrompt || '');
+  const [variables, setVariables] = useState(() => persistedData?.input?.variables || '');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const [selectedModel, setSelectedModel] = useState('Gemini 3.1 Flash');
+  const [result, setResult] = useState<any>(persistedData?.result || null);
+  const [selectedModel, setSelectedModel] = useState(() => persistedData?.input?.selectedModel || 'Gemini 3.1 Flash');
+
+  useEffect(() => {
+    if (persistedData) {
+      if (persistedData.input?.starterPrompt) setStarterPrompt(persistedData.input.starterPrompt);
+      if (persistedData.input?.variables) setVariables(persistedData.input.variables);
+      if (persistedData.input?.selectedModel) setSelectedModel(persistedData.input.selectedModel);
+      if (persistedData.result) setResult(persistedData.result);
+    }
+  }, []);
 
   const models = ['Gemini 3.1 Flash', 'GPT-4o', 'Claude 3.5 Sonnet', 'Perplexity'];
 
@@ -62,6 +76,7 @@ export default function PromptTestingLab() {
       
       if (!data) throw new Error("Refinement failed");
       setResult(data);
+      setReport('promptTestingLab', { starterPrompt, variables, selectedModel }, data);
       toast.success('Prompt Engineering Complete');
     } catch (err) {
       console.error(err);
@@ -142,6 +157,22 @@ export default function PromptTestingLab() {
                     {loading ? <Loader2 className="animate-spin mr-2" /> : <Wand2 size={18} className="mr-2" />}
                     Refine Query Architecture
                   </Button>
+
+                  {result && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        clearReport('promptTestingLab');
+                        setStarterPrompt('');
+                        setVariables('');
+                        setResult(null);
+                        toast.info('Lab reset');
+                      }}
+                      className="w-full h-14 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-2xl font-bold uppercase tracking-widest text-sm shadow-sm transition-all mt-4"
+                    >
+                      <XCircle size={18} className="mr-2 text-rose-500" /> Reset Lab
+                    </Button>
+                  )}
                </CardContent>
             </Card>
 

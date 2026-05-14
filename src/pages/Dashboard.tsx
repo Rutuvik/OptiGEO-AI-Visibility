@@ -29,19 +29,34 @@ import {
   Maximize2,
   MoreHorizontal,
   Mail,
-  ChevronDown
+  ChevronDown,
+  Download,
+  FileText,
+  FileSpreadsheet,
+  FileJson,
+  Loader2,
+  XCircle
 } from 'lucide-react';
 import { motion, AnimatePresence, animate } from 'motion/react';
+import { useAppStore } from '../lib/store';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Skeleton } from '../components/ui/skeleton';
-import { Button } from '../components/ui/button';
+import { Button, buttonVariants } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { toast } from 'sonner';
 import { getDashboardAnalysis } from '../lib/gemini';
 import { ActionEngine } from '../components/ActionEngine';
+import { exportToJSON, exportToCSV, exportReportToPDF } from '../lib/exportUtils';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
+import { cn } from "../lib/utils";
 
 const CountUp = ({ value, prefix = '', suffix = '', decimals = 0 }: { value: number, prefix?: string, suffix?: string, decimals?: number }) => {
   const [displayValue, setDisplayValue] = useState(0);
@@ -59,16 +74,29 @@ const CountUp = ({ value, prefix = '', suffix = '', decimals = 0 }: { value: num
 };
 
 export default function Dashboard() {
-  const [domain, setDomain] = useState(() => localStorage.getItem('last_analyzed_domain') || '');
-  const [data, setData] = useState<any>(null);
+  const { reports, setReport, clearReport } = useAppStore();
+  const persistedData = reports.dashboard;
+
+  const [domain, setDomain] = useState(() => persistedData?.input?.domain || localStorage.getItem('last_analyzed_domain') || '');
+  const [data, setData] = useState<any>(persistedData?.result || null);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [timeframe, setTimeframe] = useState('30D');
-  const [engine, setEngine] = useState('All Engines');
-  const [region, setRegion] = useState('Global');
+  const [timeframe, setTimeframe] = useState(() => persistedData?.input?.timeframe || '30D');
+  const [engine, setEngine] = useState(() => persistedData?.input?.engine || 'All Engines');
+  const [region, setRegion] = useState(() => persistedData?.input?.region || 'Global');
   
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (persistedData) {
+      if (persistedData.input?.domain) setDomain(persistedData.input.domain);
+      if (persistedData.input?.timeframe) setTimeframe(persistedData.input.timeframe);
+      if (persistedData.input?.engine) setEngine(persistedData.input.engine);
+      if (persistedData.input?.region) setRegion(persistedData.input.region);
+      if (persistedData.result) setData(persistedData.result);
+    }
+  }, []);
 
   const fetchDashboardData = async (targetDomain: string) => {
     if (!targetDomain) {
@@ -81,6 +109,7 @@ export default function Dashboard() {
       const result = await getDashboardAnalysis(targetDomain, { timeframe, engine, region });
       if (result) {
         setData(result);
+        setReport('dashboard', { domain: targetDomain, timeframe, engine, region }, result);
         localStorage.setItem('last_analyzed_domain', targetDomain);
         toast.success(`Analysis synchronized for ${targetDomain}`);
       } else {
@@ -126,6 +155,30 @@ export default function Dashboard() {
       `New growth opportunity: "${data.keywordInsights?.[0]?.keyword || 'niche'}"`
     ];
   }, [data, region]);
+
+  const exportDashboard = (format: 'pdf' | 'csv' | 'json') => {
+    if (!data) return;
+    const fileName = `GEO_Intelligence_Dashboard_${domain.replace(/[^a-z0-9]/gi, '_')}`;
+
+    if (format === 'json') {
+      exportToJSON(data, fileName);
+    } else if (format === 'csv') {
+      const csvData = [
+        ... (data.topQueries || []).map((q: any) => ({ ...q, type: 'Query' })),
+        ... (data.keywordInsights || []).map((k: any) => ({ ...k, type: 'Insight' }))
+      ];
+      exportToCSV(csvData, `${fileName}_Data`);
+    } else if (format === 'pdf') {
+      const sections = [
+        { title: 'Executive Summary', content: data.summary, type: 'text' as const },
+        { title: 'Key Performance Indicators', content: stats.map(s => ({ Metric: s.name, Value: `${s.value}%`, Trend: `${s.trend > 0 ? '+' : ''}${s.trend}%` })), type: 'table' as const },
+        { title: 'Engine Breakdown', content: data.engineBreakdown || [], type: 'table' as const },
+        { title: 'Top Semantic Queries', content: data.topQueries || [], type: 'table' as const },
+        { title: 'Keyword Opportunities', content: data.keywordInsights || [], type: 'table' as const },
+      ];
+      exportReportToPDF(`GEO Intelligence Report: ${domain}`, sections);
+    }
+  };
 
   if (loading) {
     return (
@@ -184,7 +237,7 @@ export default function Dashboard() {
                disabled={analyzing}
                className="h-14 px-8 bg-zinc-950 dark:bg-white dark:text-zinc-950 text-white rounded-2xl font-black uppercase tracking-tight text-xs hover:scale-105 active:scale-95 transition-all w-full sm:w-auto"
              >
-               {analyzing ? 'Synchronizing...' : 'Start Scan'}
+               {analyzing ? 'Analyzing...' : 'Start Scan'}
              </Button>
           </div>
 
@@ -207,6 +260,36 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-zinc-50/30 dark:bg-zinc-950 pb-20 font-sans text-left">
+      <AnimatePresence>
+        {analyzing && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] bg-zinc-50/95 dark:bg-zinc-950/95 backdrop-blur-md flex flex-col items-center justify-center p-6"
+          >
+            <div className="relative mb-12">
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="w-24 h-24 border-[1px] border-zinc-200 dark:border-zinc-800 border-t-zinc-900 dark:border-t-white rounded-full"
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Cpu className="text-zinc-900 dark:text-white animate-pulse" size={32} />
+              </div>
+            </div>
+            
+            <div className="space-y-3 text-center max-w-sm">
+              <h2 className="text-xl font-black tracking-[0.15em] text-zinc-900 dark:text-white uppercase leading-none">
+                NEURAL DEEP-DIVE IN PROGRESS
+              </h2>
+              <p className="text-sm font-bold text-zinc-400 leading-relaxed">
+                Synchronizing global AI mentions, competitor visibility, and semantic clusters...
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* AI Citation Ticker */}
       <div className="h-10 bg-white dark:bg-zinc-900 border-b border-zinc-100 dark:border-zinc-800 overflow-hidden flex items-center shadow-sm">
          <div className="h-full w-32 bg-white dark:bg-zinc-900 z-10 flex items-center pl-6 border-r border-zinc-50 dark:border-zinc-800">
@@ -262,21 +345,59 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-            <Button 
-              disabled={analyzing}
-              onClick={() => fetchDashboardData(domain)}
-              className="h-14 px-8 bg-zinc-950 dark:bg-white dark:text-zinc-950 text-white rounded-2xl font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-zinc-950/10"
-            >
-              {analyzing ? 'Synchronizing...' : 'Sync Intelligence'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                disabled={analyzing}
+                onClick={() => fetchDashboardData(domain)}
+                className="h-14 px-8 bg-zinc-950 dark:bg-white dark:text-zinc-950 text-white rounded-2xl font-black uppercase tracking-tight text-xs hover:scale-105 active:scale-95 transition-all shadow-xl shadow-zinc-950/10"
+              >
+                {analyzing ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Analyzing...
+                  </span>
+                ) : 'Start Scan'}
+              </Button>
+              
+              {data && (
+                <Button 
+                  variant="outline"
+                  onClick={() => {
+                    clearReport('dashboard');
+                    setDomain('');
+                    toast.info('Scan cleared');
+                  }}
+                  className="h-14 px-6 rounded-2xl border-zinc-200 dark:border-zinc-800 font-bold text-sm bg-white dark:bg-zinc-900 transition-all shadow-sm"
+                >
+                  <XCircle size={18} className="mr-2 text-rose-500" /> Clear
+                </Button>
+              )}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger className="h-14 px-6 rounded-2xl bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 font-bold text-sm hover:scale-105 active:scale-95 transition-all shadow-xl shadow-zinc-950/10 inline-flex items-center justify-center">
+                  <Download size={18} className="mr-2" /> Export
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden min-w-[160px] z-[100]">
+                  <DropdownMenuItem onClick={() => exportDashboard('pdf')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <FileText size={14} className="text-rose-500" /> Intelligence PDF
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportDashboard('csv')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <FileSpreadsheet size={14} className="text-emerald-500" /> Metrics CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => exportDashboard('json')} className="flex items-center gap-2 p-3 text-xs font-bold cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <FileJson size={14} className="text-amber-500" /> Raw JSON
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </header>
 
         {/* Global Filters */}
-        <section className="flex flex-wrap items-center gap-4 bg-white dark:bg-zinc-900 p-4 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 shadow-sm">
-           <div className="flex items-center gap-2 px-4 py-2 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
-              <Filter size={14} className="text-zinc-400" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Filter Spectrum</span>
+        <section className="flex flex-wrap items-center gap-4 bg-white dark:bg-zinc-900 p-4 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 shadow-sm relative group overflow-hidden">
+           <div className="absolute inset-0 bg-zinc-950 opacity-[0.01] group-hover:opacity-[0.02] transition-opacity" />
+           <div className="flex items-center gap-2 px-4 py-2 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl relative z-10">
+              <Filter size={16} className="text-zinc-950 dark:text-white" />
+              <span className="text-xs font-black uppercase tracking-widest text-zinc-950 dark:text-white">Filter Spectrum</span>
            </div>
            
            <div className="h-6 w-[1px] bg-zinc-100 dark:bg-zinc-800 mx-2 hidden md:block" />
@@ -287,13 +408,13 @@ export default function Dashboard() {
              { label: 'Region', value: region, setter: setRegion, options: ['Global', 'North America', 'EMEA', 'APAC'] }
            ].map((f) => (
              <div key={f.label} className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">{f.label}:</span>
+                <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-tighter">{f.label}:</span>
                 <div className="flex bg-zinc-50 dark:bg-zinc-800/30 p-1 rounded-xl border border-zinc-100 dark:border-zinc-800">
                   {f.options.map((opt) => (
                     <button
                       key={opt}
                       onClick={() => f.setter(opt)}
-                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tight transition-all ${f.value === opt ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-sm ring-1 ring-zinc-200/50' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-tight transition-all ${f.value === opt ? 'bg-white dark:bg-zinc-900 text-zinc-950 dark:text-white shadow-sm ring-1 ring-zinc-200/50' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'}`}
                     >
                       {opt}
                     </button>
