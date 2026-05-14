@@ -7,7 +7,7 @@ GEO Tool is an AI-powered platform built for the next generation of search and d
 
 The platform combines AI visibility analysis, semantic intelligence, competitor research, content generation, and strategic optimization into a unified workflow. From deep domain analysis to humanized GEO-focused blog generation, GEO Tool is designed to help businesses improve discoverability, authority, and growth in the AI-first internet era.
 
-Built using React, TypeScript, Node.js, and Gemini AI, the platform delivers enterprise-grade intelligence with a modern, high-performance user experience focused on real-time insights, actionable recommendations, and scalable AI-driven workflows.
+Built using MultiAgents, Gemini AI, the platform delivers enterprise-grade intelligence with a modern, high-performance user experience focused on real-time insights, actionable recommendations, and scalable AI-driven workflows.
 
 ## Run Locally
 
